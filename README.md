@@ -94,3 +94,35 @@ a54x:/ $
 забыл про прикол с несуществующей папкой нужен флаг `-p` чтобы она создавалась без проблем
 
 так заебца скрин есть все работает
+
+нужно перекинуть его на пк в папку tmp
+
+`adb --help`
+
+```
+file transfer:
+ push [--sync] [-z ALGORITHM] [-Z] LOCAL... REMOTE
+     copy local files/directories to device
+     --sync: only push files that are newer on the host than the device
+     -n: dry run: push files to device without storing to the filesystem
+     -z: enable compression with a specified algorithm (any/none/brotli/lz4/zstd)
+     -Z: disable compression
+ pull [-a] [-z ALGORITHM] [-Z] REMOTE... LOCAL
+     copy files/dirs from device
+     -a: preserve file timestamp and mode
+     -z: enable compression with a specified algorithm (any/none/brotli/lz4/zstd)
+     -Z: disable compression
+ sync [-l] [-z ALGORITHM] [-Z] [all|data|odm|oem|product|system|system_ext|vendor]
+     sync a local build from $ANDROID_PRODUCT_OUT to the device (default all)
+     -n: dry run: push files to device without storing to the filesystem
+     -l: list files that would be copied, but don't copy them
+     -z: enable compression with a specified algorithm (any/none/brotli/lz4/zstd)
+     -Z: disable compression
+```
+хаваем pull допустим с флагом -Z
+
+написали комадну для созадния папки на устройстве 
+
+написали скрипт пылесборник для срина (хавает его с устройства)
+
+флаг `-Z` не обязателен по словам всевышнего тк .png формат и так сжат
