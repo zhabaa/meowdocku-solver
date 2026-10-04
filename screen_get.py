@@ -4,7 +4,7 @@ import subprocess
 DEVICE_DIR = "/sdcard/tmp"
 FILENAME = "TEST_SCREEN.png"
 
-LOCAL_DIR = "tmp"
+LOCAL_DIR = "img/tmp"
 
 subprocess.run(["adb", "shell", "mkdir", "-p", DEVICE_DIR], check=True)
 subprocess.run(["adb", "shell", "screencap", "-p", f"{DEVICE_DIR}/{FILENAME}"], check=True)
