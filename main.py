@@ -27,6 +27,7 @@ import emulate
 from annotate import annotate
 from field import Board
 from screens import ScreenKind, detect
+from domain import Cell
 from solver import InconsistentBoard, solve_from_board
 
 OUT_DIR = Path("img/tmp")
@@ -212,31 +213,32 @@ def solve_level(board: Board, shot: Path, dry_run: bool) -> bool:
         print(f"Скриншот сохранён: {OUT_DIR / 'failed.png'}")
         return False
 
-    todo = [cell for cell in solution if cell not in board.cats]
+    found = [Cell(row, col) for row, col in board.cats]
+    todo = [cat for cat in solution if cat not in found]
     print(f"Расстановка: {solution}")
     print(f"Осталось поставить: {len(todo)}")
 
     annotate(shot, board, OUT_DIR / "plan.png", planned=todo)
 
     if dry_run:
-        for row, col in todo:
-            x, y = board.tap_point(row, col)
-            print(f"  ({row},{col}) тап в ({x:.0f}, {y:.0f})")
+        for cat in todo:
+            x, y = board.tap_point(cat.row, cat.col)
+            print(f"  {cat} тап в ({x:.0f}, {y:.0f})")
         return True
 
-    for row, col in todo:
-        x, y = board.tap_point(row, col)
-        print(f"  двойной тап ({row},{col}) -> ({x:.0f}, {y:.0f})")
+    for cat in todo:
+        x, y = board.tap_point(cat.row, cat.col)
+        print(f"  двойной тап {cat} -> ({x:.0f}, {y:.0f})")
 
-        if not place_cat(row, col, x, y):
-            print(f"Котик ({row},{col}) так и не появился.")
+        if not place_cat(cat, x, y):
+            print(f"Котик {cat} так и не появился.")
             print(f"Последний скриншот: {LIVE_SHOT}")
             return False
 
     return True
 
 
-def place_cat(row: int, col: int, x: float, y: float) -> bool:
+def place_cat(cat: Cell, x: float, y: float) -> bool:
     """Поставить одного котика двойными тапами, пока он не появится.
 
     Повтор в ту же клетку безопасен: жизнь тратится только за попадание
@@ -245,18 +247,18 @@ def place_cat(row: int, col: int, x: float, y: float) -> bool:
     for attempt in range(1, MAX_TAP_ATTEMPTS + 1):
         emulate.double_tap(x, y)
 
-        if wait_for_cat(row, col):
+        if wait_for_cat(cat):
             return True
 
         print(
-            f"  котик в ({row},{col}) не появился, "
+            f"  котик в {cat} не появился, "
             f"повторяем тап ({attempt}/{MAX_TAP_ATTEMPTS})"
         )
 
     return False
 
 
-def wait_for_cat(row: int, col: int) -> bool:
+def wait_for_cat(cat: Cell) -> bool:
     """Ждать, пока кот появится в нужной клетке.
 
     Поле, исчезнувшее с экрана, тоже считаем успехом: значит уровень
@@ -268,7 +270,7 @@ def wait_for_cat(row: int, col: int) -> bool:
         if screen.kind != ScreenKind.BOARD:
             return True
 
-        if (row, col) in screen.board.cats:
+        if cat in [Cell(r, c) for r, c in screen.board.cats]:
             return True
 
         time.sleep(POLL_INTERVAL)
@@ -356,16 +358,17 @@ def run_on_image(path: Path) -> int:
         print(f"Решение не найдено: {error}")
         return 1
 
-    todo = [cell for cell in solution if cell not in board.cats]
+    found = [Cell(row, col) for row, col in board.cats]
+    todo = [cat for cat in solution if cat not in found]
     print(f"\n{solution}")
     print(f"Уже найдено: {sorted(board.cats)}")
     print(f"Осталось поставить: {len(todo)}")
 
-    for row, col in todo:
-        x, y = board.tap_point(row, col)
-        print(f"  ({row},{col}) тап в ({x:.0f}, {y:.0f})")
+    for cat in todo:
+        x, y = board.tap_point(cat.row, cat.col)
+        print(f"  {cat} тап в ({x:.0f}, {y:.0f})")
 
-    annotate(path, board, OUT_DIR / "preview.png", planned=todo)
+    annotate(path, board, OUT_DIR / "preview.png", planned=[(c.row, c.col) for c in todo])
     print(f"\nРазбор сохранён: {OUT_DIR / 'preview.png'}")
     return 0
 

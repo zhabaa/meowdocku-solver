@@ -87,9 +87,9 @@ def test_taps_match_solution() -> None:
     solution = solve_from_board(board)
     # Уже найденного котика тапать не будем, его в ожидании нет.
     expected = {
-        tuple(map(int, board.tap_point(r, c)))
-        for r, c in solution
-        if (r, c) not in board.cats
+        tuple(map(int, board.tap_point(cat.row, cat.col)))
+        for cat in solution
+        if (cat.row, cat.col) not in board.cats
     }
 
     phone = FakePhone(screens=[SHOTS / "shot_8.jpg"])
@@ -204,8 +204,8 @@ def test_waits_for_board_to_change() -> None:
 
     # После того как все котики поставлены, поле остаётся на экране:
     # подделка не переключается сама, как и игра.
-    for row, col in solve_from_board(board):
-        phone.double_tap(*board.tap_point(row, col))
+    for cat in solve_from_board(board):
+        phone.double_tap(*board.tap_point(cat.row, cat.col))
 
     with running(phone, max_levels=1, max_steps=5):
         pass
@@ -328,19 +328,14 @@ def test_retries_bad_board_frame() -> None:
 def test_board_is_inspected_before_tapping() -> None:
     """Поле с подсветкой поверх читается как поле, но котиков там больше,
     чем может быть. Такое до тапов не допускаем."""
-    from solver import Solution
-
-    fake = Solution(
-        n=10,
-        cats=tuple((row, col) for row in range(10) for col in range(10))[:21],
-    )
-
     from field import Board
 
     board = Board(
         n=10,
         colors=tuple(tuple("ABCDEFGHIJ" for _ in range(10)) for _ in range(10)),
-        cats=frozenset(fake.cats),
+        cats=frozenset(
+            (row, col) for row in range(10) for col in range(10)
+        ),
         centers=tuple((0.0, 0.0) for _ in range(100)),
         tap_points=tuple((0.0, 0.0) for _ in range(100)),
         palette=tuple((0, 0, 0) for _ in range(10)),
@@ -349,9 +344,9 @@ def test_board_is_inspected_before_tapping() -> None:
     )
 
     problem = main.inspect_board(board)
-    check(problem is not None, "21 котик на поле 10x10 прошёл проверку")
+    check(problem is not None, "100 котиков на поле 10x10 прошли проверку")
     check(
-        problem is not None and "21" in problem,
+        problem is not None and "100" in problem,
         f"в сообщении нет числа котиков: {problem}",
     )
 

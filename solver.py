@@ -11,190 +11,233 @@
 
 import time
 from dataclasses import dataclass
-from typing import Iterable, Iterator, Optional, Sequence
+from typing import Sequence
+
+from domain import Cell
+from logging_setup import get_logger
+
+log = get_logger("solver")
 
 # Столько решений достаточно, чтобы понять: решение единственное или нет.
 AMBIGUOUS_AT = 2
 
 
-class InconsistentBoard(RuntimeError):
-    """Поле не имеет решения, либо найденные котики ему противоречат.
+class UniqueSolutionRequired(RuntimeError):
+    """Решений нет или их больше одной.
 
-    Обычно значит, что цвета прочитаны неверно.
+    Поля без единственного решения в игре не бывает, так что исключение —
+    это сигнал ошибки чтения, а не штатная ситуация.
     """
 
 
 @dataclass(frozen=True)
 class Solution:
-    n: int
-    cats: tuple[tuple[int, int], ...]
+    """Единственная расстановка кошек."""
 
-    def __contains__(self, cell: tuple[int, int]) -> bool:
+    size: int
+    cats: tuple[Cell, ...]
+
+    def __contains__(self, cell: Cell) -> bool:
         return cell in self.cats
 
-    def __iter__(self) -> Iterator[tuple[int, int]]:
+    def __iter__(self):
         return iter(self.cats)
 
     def __len__(self) -> int:
         return len(self.cats)
 
     def __str__(self) -> str:
-        return "котики: " + ", ".join(f"({r},{c})" for r, c in self.cats)
+        return "котики: " + ", ".join(str(cat) for cat in self.cats)
 
 
-def solve(
-    colors: Sequence[Sequence[str]],
-    found_cats: Iterable[tuple[int, int]] = (),
-    time_limit: float = 30.0,
-) -> Solution:
-    """Найти единственную расстановку кошек.
-
-    Бросает InconsistentBoard, если решений нет или их больше одной.
-    Поля без решения в игре не бывает, так что исключение — это сигнал
-    ошибки чтения, а не штатная ситуация.
-    """
-    n = len(colors)
-    if n == 0:
-        raise InconsistentBoard("Поле пустое")
-    if any(len(row) != n for row in colors):
-        raise InconsistentBoard("Поле не квадратное")
-
-    known = _validate_found(colors, n, found_cats)
-
-    placements = _enumerate(colors, n, known, time_limit)
-
-    if not placements:
-        detail = "" if not known else f" с учётом найденных кошек {sorted(known)}"
-        raise InconsistentBoard(f"Решений нет{detail}")
-
-    if len(placements) >= AMBIGUOUS_AT:
-        raise InconsistentBoard(
-            f"Решений минимум {len(placements)} — поле прочитано неверно, тапать нельзя"
-        )
-
-    placement = placements[0]
-    cats = tuple((row, col) for row, col in enumerate(placement))
-    return Solution(n=n, cats=cats)
-
-
-def is_unique(
-    colors: Sequence[Sequence[str]],
-    found_cats: Iterable[tuple[int, int]] = (),
-    time_limit: float = 30.0,
-) -> bool:
-    """Единственное ли решение."""
-    try:
-        solve(colors, found_cats, time_limit)
-    except InconsistentBoard:
-        return False
-    return True
-
-
-def _validate_found(
-    colors: Sequence[Sequence[str]],
-    n: int,
-    found_cats: Iterable[tuple[int, int]],
-) -> dict[tuple[int, int], str]:
-    """Проверить найденных кошек на вменяемость.
-
-    Кошка занимает строку, столбец и цвет. Две кошки в одной строке или
-    одного цвета означают, что поле прочитано неверно.
-    """
-    seen: dict[tuple[int, int], str] = {}
-    rows: set[int] = set()
-    cols: set[int] = set()
-    letters: set[str] = set()
-
-    for row, col in sorted(set(found_cats)):
-        if not (0 <= row < n and 0 <= col < n):
-            raise InconsistentBoard(f"Котик ({row},{col}) вне поля {n}x{n}")
-
-        if row in rows:
-            raise InconsistentBoard(f"Котики ({row},{col}) и ещё один делят строку {row}")
-        if col in cols:
-            raise InconsistentBoard(f"Котики ({row},{col}) и ещё один делят столбец {col}")
-
-        letter = colors[row][col]
-        if letter in letters:
-            raise InconsistentBoard(f"Котик ({row},{col}) занимает цвет {letter}, уже занятый")
-
-        rows.add(row)
-        cols.add(col)
-        letters.add(letter)
-        seen[(row, col)] = letter
-
-    return seen
-
-
-def _enumerate(
-    colors: Sequence[Sequence[str]],
-    n: int,
-    known: dict[tuple[int, int], str],
-    time_limit: float,
-) -> list[list[Optional[int]]]:
-    """Перебрать расстановки обходом в глубину по строкам.
-
-    В строке кошка одна, поэтому на каждом шаге выбираем столбец. Отсекаем
-    ветки, где столбец занят, рядом стоит кошка или цвет уже использован.
-    Возвращает не больше AMBIGUOUS_AT расстановок: двух достаточно, чтобы
-    признать поле неоднозначным.
-    """
-    deadline = time.monotonic() + time_limit
-    found: list[list[Optional[int]]] = []
-
-    cols = list(range(n))
-    placement: list[Optional[int]] = [None] * n
-    # Столбец -> строка, чтобы проверка занятости была O(1).
-    by_col: dict[int, int] = {}
-    used_letters: set[str] = set()
-
-    # Найденные котики ставим сразу: их позиции не выбираются.
-    for (row, col), letter in known.items():
-        placement[row] = col
-        by_col[col] = row
-        used_letters.add(letter)
-
-    locked_rows = {row for row, _ in known}
-
-    def search(row: int) -> None:
-        if len(found) >= AMBIGUOUS_AT or time.monotonic() > deadline:
-            return
-
-        if row == n:
-            found.append(placement[:])
-            return
-
-        if row in locked_rows:
-            search(row + 1)
-            return
-
-        # Кошка выше по соседней строке, если она там есть.
-        previous = placement[row - 1] if row > 0 else None
-
-        for col in cols:
-            if col in by_col:
-                continue
-            if previous is not None and abs(col - previous) <= 1:
-                continue
-            letter = colors[row][col]
-            if letter in used_letters:
-                continue
-
-            placement[row] = col
-            by_col[col] = row
-            used_letters.add(letter)
-
-            search(row + 1)
-
-            used_letters.discard(letter)
-            del by_col[col]
-            placement[row] = None
-
-    search(0)
-
-    return found
+# Временная совместимость: старое имя исключения и обёртка для кода,
+# который ещё не переведён на класс Solver. Уберём в следующих коммитах.
+InconsistentBoard = UniqueSolutionRequired
 
 
 def solve_from_board(board, time_limit: float = 30.0) -> Solution:
-    """Посчитать расстановку для прочитанного поля, сверив найденных кошек."""
-    return solve(board.colors, board.cats, time_limit)
+    return Solver(time_limit=time_limit).solve_board(board)
+
+
+def _as_cell(value: Cell | tuple[int, int]) -> Cell:
+    """Принять и Cell, и пару (строка, столбец)."""
+    if isinstance(value, Cell):
+        return value
+    return Cell(value[0], value[1])
+
+
+class Solver:
+    """Ищет единственную расстановку кошек на поле.
+
+    Обход в глубину по строкам: в строке кошка одна, поэтому на каждом шаге
+    выбираем столбец. Ветки отсекаем, когда столбец занят, рядом уже стоит
+    кошка или цвет использован.
+    """
+
+    def __init__(self, time_limit: float = 30.0, max_solutions: int = AMBIGUOUS_AT) -> None:
+        self.time_limit = time_limit
+        self.max_solutions = max_solutions
+
+    def solve(
+        self,
+        colors: Sequence[Sequence[str]],
+        found_cats: Sequence[Cell] = (),
+    ) -> Solution:
+        """Найти единственную расстановку.
+
+        Бросает UniqueSolutionRequired, если решений нет или их больше одной.
+        """
+        size = len(colors)
+        if size == 0:
+            raise UniqueSolutionRequired("поле пустое")
+        if any(len(row) != size for row in colors):
+            raise UniqueSolutionRequired("поле не квадратное")
+
+        known = self._validate_found(colors, size, [_as_cell(cat) for cat in found_cats])
+        solutions = self._enumerate(colors, size, known)
+
+        if not solutions:
+            detail = f" с учётом найденных кошек {sorted(str(c) for c in known)}" if known else ""
+            raise UniqueSolutionRequired(f"решений нет{detail}")
+
+        if len(solutions) >= self.max_solutions:
+            raise UniqueSolutionRequired(
+                f"решений минимум {len(solutions)} — поле прочитано неверно, тапать нельзя"
+            )
+
+        return Solution(size=size, cats=solutions[0])
+
+    def is_unique(
+        self,
+        colors: Sequence[Sequence[str]],
+        found_cats: Sequence[Cell] = (),
+    ) -> bool:
+        """Единственное ли решение."""
+        try:
+            self.solve(colors, found_cats)
+        except UniqueSolutionRequired:
+            return False
+        return True
+
+    def solve_board(self, board) -> Solution:
+        """Посчитать расстановку для прочитанного поля."""
+        return self.solve(board.colors, list(board.cats))
+
+    # --- внутреннее -------------------------------------------------------
+
+    def _validate_found(
+        self,
+        colors: Sequence[Sequence[str]],
+        size: int,
+        found_cats: Sequence[Cell],
+    ) -> dict[Cell, str]:
+        """Проверить найденных кошек на вменяемость.
+
+        Кошка занимает строку, столбец и цвет. Две кошки в одной строке или
+        одного цвета означают, что поле прочитано неверно.
+        """
+        known: dict[Cell, str] = {}
+        used_rows: set[int] = set()
+        used_cols: set[int] = set()
+        used_colors: set[str] = set()
+
+        for cell in sorted(set(found_cats)):
+            if not (0 <= cell.row < size and 0 <= cell.col < size):
+                raise UniqueSolutionRequired(f"котик {cell} вне поля {size}x{size}")
+
+            if cell.row in used_rows:
+                raise UniqueSolutionRequired(
+                    f"котики {cell} и ещё один делят строку {cell.row}"
+                )
+            if cell.col in used_cols:
+                raise UniqueSolutionRequired(
+                    f"котики {cell} и ещё один делят столбец {cell.col}"
+                )
+
+            letter = colors[cell.row][cell.col]
+            if letter in used_colors:
+                raise UniqueSolutionRequired(
+                    f"котик {cell} занимает цвет {letter}, уже занятый"
+                )
+
+            used_rows.add(cell.row)
+            used_cols.add(cell.col)
+            used_colors.add(letter)
+            known[cell] = letter
+
+        return known
+
+    def _enumerate(
+        self,
+        colors: Sequence[Sequence[str]],
+        size: int,
+        known: dict[Cell, str],
+    ) -> list[tuple[Cell, ...]]:
+        """Перебрать расстановки обходом в глубину по строкам.
+
+        Возвращает не больше max_solutions расстановок: двух достаточно,
+        чтобы признать поле неоднозначным.
+        """
+        deadline = time.monotonic() + self.time_limit
+        solutions: list[tuple[Cell, ...]] = []
+
+        # Столбец каждой строки, None — строка ещё не заполнена.
+        placement: list[int | None] = [None] * size
+        # Столбец -> строка, чтобы проверка занятости была O(1).
+        row_by_column: dict[int, int] = {}
+        used_colors: set[str] = set()
+
+        # Найденных кошек ставим сразу: их позиции не выбираются.
+        locked_rows: set[int] = set()
+        for cell, letter in known.items():
+            placement[cell.row] = cell.col
+            row_by_column[cell.col] = cell.row
+            used_colors.add(letter)
+            locked_rows.add(cell.row)
+
+        def search(row: int) -> None:
+            if len(solutions) >= self.max_solutions or time.monotonic() > deadline:
+                return
+
+            if row == size:
+                solutions.append(
+                    tuple(Cell(row, col) for row, col in enumerate(placement) if col is not None)
+                )
+                return
+
+            if row in locked_rows:
+                search(row + 1)
+                return
+
+            # Кошка выше по соседней строке, если она там есть.
+            previous_cat_column = placement[row - 1] if row > 0 else None
+
+            for col in range(size):
+                if col in row_by_column:
+                    continue
+                if previous_cat_column is not None and abs(col - previous_cat_column) <= 1:
+                    continue
+
+                letter = colors[row][col]
+                if letter in used_colors:
+                    continue
+
+                placement[row] = col
+                row_by_column[col] = row
+                used_colors.add(letter)
+
+                search(row + 1)
+
+                used_colors.discard(letter)
+                del row_by_column[col]
+                placement[row] = None
+
+        search(0)
+
+        if len(solutions) >= self.max_solutions:
+            log.debug("поле %dx%d неоднозначно, найдено решений: %d", size, size, len(solutions))
+        else:
+            log.debug("поле %dx%d: решений %d, время %.3fс", size, size, len(solutions),
+                      self.time_limit - max(0.0, deadline - time.monotonic()))
+
+        return solutions

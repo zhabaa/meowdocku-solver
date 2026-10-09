@@ -8,6 +8,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from domain import Cell
 from field import BoardReadError, read_board
 
 IMG_DIR = Path(__file__).parent / "img" / "tmp"
@@ -138,7 +139,7 @@ def test_grey_cat_cell() -> None:
     from solver import solve_from_board
 
     solution = solve_from_board(board)
-    check((7, 6) in solution, f"котик (7,6) не попал в решение {solution}")
+    check(Cell(7, 6) in solution, f"котик (7,6) не попал в решение {solution}")
     check(len(solution) == 9, f"в решении {len(solution)} кошек, ожидалось 9")
 
 
@@ -167,12 +168,13 @@ def test_live_screens() -> None:
     from solver import solve_from_board
 
     solution = solve_from_board(board)
+    board_cells = [Cell(row, col) for row, col in board.cats]
     check(
-        (0, 4) in solution,
+        Cell(0, 4) in solution,
         f"котик (0,4) не попал в решение {solution}",
     )
     check(
-        len([c for c in solution if c not in board.cats]) == 9,
+        len([cat for cat in solution if cat not in board_cells]) == 9,
         "после одного тапа осталось не 9 кошек",
     )
 
