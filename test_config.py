@@ -72,13 +72,13 @@ def test_all_values_reachable() -> None:
         "device.device_dir",
     }
     check(expected <= names, f"в to_dict нет {expected - names}")
-    check(len(names) == 43, f"значений {len(names)}, ожидалось 43")
+    check(len(names) == 44, f"значений {len(names)}, ожидалось 44")
 
 
 def test_describe_is_readable() -> None:
     text = Settings().describe()
     check("board.min_saturation = 40" in text, "describe не показывает значения")
-    check(len(text.splitlines()) == 43, "describe печатает не все настройки")
+    check(len(text.splitlines()) == 44, "describe печатает не все настройки")
 
 
 def test_from_env_overrides() -> None:

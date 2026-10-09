@@ -206,6 +206,7 @@ class GameBot:
         """Пройти уровней: 0 — без ограничения. False — продолжать нельзя."""
         levels_done = 0
         steps = 0
+        stuck = 0
 
         while True:
             steps += 1
@@ -241,14 +242,31 @@ class GameBot:
 
                 levels_done += 1
                 log.info("уровень пройден. Всего: %d", levels_done)
+                stuck = 0
 
                 if max_levels and levels_done >= max_levels:
                     log.info("достигнут предел уровней (%d). Останавливаюсь.", max_levels)
                     return EXIT_OK
 
             else:
-                if not self._tap_until_changed(screen, dry_run):
-                    return EXIT_OK
+                if self._tap_until_changed(screen, dry_run):
+                    stuck = 0
+                    continue
+
+                # Тап не сработал. Кнопка могла уехать, поэтому следующий
+                # круг цикла переснимает экран и ищет её заново: точка тапа
+                # берётся из картинки, а не хранится.
+                stuck += 1
+                log.warning("переход не сработал %d раз подряд", stuck)
+
+                if stuck >= self.timing.max_stuck_transitions:
+                    log.error(
+                        "экран не меняется после %d попыток подряд: телефон "
+                        "заблокирован или игра закрыта",
+                        stuck,
+                    )
+                    log.error("последний скриншот: %s", self.live_shot)
+                    return EXIT_FAILED
 
     def _shoot_stable(self) -> Optional[Screen]:
         """Снять экран и дождаться, пока он перестанет меняться.

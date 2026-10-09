@@ -156,13 +156,51 @@ def test_repeated_tap_when_screen_unchanged() -> None:
     check(len(set(phone.taps)) == 1, f"тапы разъехались: {set(phone.taps)}")
 
 
-def test_stopped_when_screen_never_changes() -> None:
-    """Если экран так и не сменился, цикл завершается, а не висит."""
+def test_gives_up_when_screen_never_changes() -> None:
+    """Если экран так и не сменился, бот сдаётся, а не висит и не молчит.
+
+    Переход пробуется max_stuck_transitions раз подряд — кнопка могла уехать,
+    и её надо найти заново. Когда и это не помогло, телефон заблокирован.
+    """
+    timing = Settings().timing
     phone = FakePhone(screens=[SHOTS / "shot_1.jpg"])
-    code = run(phone, max_steps=3)
+    code = run(phone, max_steps=50)
+
+    check(code == EXIT_FAILED, f"вернулся код {code}, ожидался 1")
+    check(
+        len(phone.taps) == timing.max_stuck_transitions * timing.max_tap_attempts,
+        f"тапов {len(phone.taps)}, ожидалось "
+        f"{timing.max_stuck_transitions * timing.max_tap_attempts}",
+    )
+
+
+def test_recovers_from_stuck_transition() -> None:
+    """Промахнувшийся тап по кнопке не убивает прогон.
+
+    Кнопка «уровень пройден» прыгает по вертикали между кадрами, и тап в
+    сохранённую точку иногда не срабатывает. Раньше бот на этом тихо
+    завершался даже с --levels 0; теперь он переснимает экран, ищет кнопку
+    заново и доигрывает уровень.
+    """
+    phone = FakePhone(screens=[SHOTS / "shot_2.jpg", SHOTS / "shot_5.jpg"])
+    bot = build_bot(phone)
+    real_tap = bot._tap_until_changed
+    calls = {"n": 0}
+
+    def flaky_tap(screen, dry_run=False):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return False
+        return real_tap(screen, dry_run)
+
+    bot._tap_until_changed = flaky_tap
+
+    with mock.patch("time.sleep"):
+        code = bot.run(max_levels=1, max_steps=30)
 
     check(code == EXIT_OK, f"вернулся код {code}, ожидался 0")
-    check(len(phone.taps) <= 3, f"тапов {len(phone.taps)}, ожидалось не больше 3")
+    check(calls["n"] >= 2, f"переход опробован {calls['n']} раз, бот не попробовал снова")
+    check(len(phone.double_taps) == 8, f"двойных тапов {len(phone.double_taps)}, ожидалось 8")
 
 
 def test_repeats_double_tap_when_cat_missing() -> None:
@@ -329,10 +367,14 @@ def test_levels_limit_stops_loop() -> None:
 
 
 def test_step_limit_stops_loop() -> None:
+    timing = Settings().timing
     phone = FakePhone(screens=[SHOTS / "shot_1.jpg"])
     run(phone, max_levels=0, max_steps=3)
 
-    check(len(phone.taps) <= 5, f"тапов {len(phone.taps)} при пределе шагов 3")
+    check(
+        len(phone.taps) <= timing.max_tap_attempts * 3,
+        f"тапов {len(phone.taps)} при пределе шагов 3",
+    )
 
 
 def main() -> int:
@@ -344,7 +386,8 @@ def main() -> int:
         test_leaderboard_then_board,
         test_level_done_button,
         test_repeated_tap_when_screen_unchanged,
-        test_stopped_when_screen_never_changes,
+        test_gives_up_when_screen_never_changes,
+        test_recovers_from_stuck_transition,
         test_repeats_double_tap_when_cat_missing,
         test_tiny_board_rejected,
         test_too_many_cats_rejected,
