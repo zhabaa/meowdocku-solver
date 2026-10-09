@@ -54,6 +54,18 @@ class Board:
     centers: tuple[tuple[float, float], ...]
     tap_points: tuple[tuple[float, float], ...]
     palette: tuple[tuple[int, int, int], ...]
+    cell_w: int
+    cell_h: int
+
+    def box(self, row: int, col: int) -> tuple[int, int, int, int]:
+        """Прямоугольник клетки: левый верхний угол и размер."""
+        cx, cy = self.centers[row * self.n + col]
+        return (
+            int(cx - self.cell_w / 2),
+            int(cy - self.cell_h / 2),
+            self.cell_w,
+            self.cell_h,
+        )
 
     def cell(self, row: int, col: int) -> str:
         return self.colors[row][col]
@@ -295,6 +307,9 @@ def read_board(path: str) -> Board:
             centers.append((cx, cy))
             tap_points.append((cx + TAP_OFFSET_X * unit, cy + TAP_OFFSET_Y * unit))
 
+    cell_w = int(np.median([b[2] for b in boxes]))
+    cell_h = int(np.median([b[3] for b in boxes]))
+
     return Board(
         n=n,
         colors=colors,
@@ -302,6 +317,8 @@ def read_board(path: str) -> Board:
         centers=tuple(centers),
         tap_points=tuple(tap_points),
         palette=tuple(tuple(int(v) for v in color) for color in palette),
+        cell_w=cell_w,
+        cell_h=cell_h,
     )
 
 
