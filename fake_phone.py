@@ -15,7 +15,9 @@ from unittest import mock
 import cv2
 import numpy as np
 
-from field import _find_cells, _grid_of, read_board
+from config import Settings
+from domain import Cell
+from field import BoardReader
 
 SHOTS = Path(__file__).parent / "img" / "screenshots"
 
@@ -26,6 +28,14 @@ BOARD_WITH_CATS = SHOTS / "shot_6.jpg"
 SOURCE_CATS = ((4, 3), (5, 5), (6, 0))
 
 
+def _grid_of(image: np.ndarray) -> dict[Cell, "CellBox"]:
+    """Публичный способ узнать прямоугольник каждой клетки."""
+    reader = BoardReader(Settings())
+    boxes = reader.cells_detector.find_cell_boxes(image)
+    _size, grid = reader.cells_detector.build_grid(boxes)
+    return grid
+
+
 def build_cat_sprites() -> dict[int, tuple[np.ndarray, np.ndarray]]:
     """Вырезать спрайт котика: картинка клетки с котом и маска котика.
 
@@ -34,24 +44,31 @@ def build_cat_sprites() -> dict[int, tuple[np.ndarray, np.ndarray]]:
     empty = cv2.imread(str(EMPTY_BOARD))
     filled = cv2.imread(str(BOARD_WITH_CATS))
 
-    _, empty_grid = _grid_of(_find_cells(empty))
-    _, filled_grid = _grid_of(_find_cells(filled))
+    empty_grid = _grid_of(empty)
+    filled_grid = _grid_of(filled)
 
     sprites: dict[int, tuple[np.ndarray, np.ndarray]] = {}
 
-    for cell in SOURCE_CATS:
-        x, y, w, h = empty_grid[cell]
-        fx, fy, _, _ = filled_grid[cell]
+    for row, col in SOURCE_CATS:
+        cell = Cell(row, col)
+        empty_box = empty_grid[cell]
+        filled_box = filled_grid[cell]
 
-        before = empty[y : y + h, x : x + w].astype(np.int16)
-        after = filled[fy : fy + h, fx : fx + w]
+        before = empty[
+            empty_box.top : empty_box.top + empty_box.height,
+            empty_box.left : empty_box.left + empty_box.width,
+        ].astype(np.int16)
+        after = filled[
+            filled_box.top : filled_box.top + empty_box.height,
+            filled_box.left : filled_box.left + empty_box.width,
+        ]
 
         difference = np.abs(after.astype(np.int16) - before).sum(axis=2) > 40
 
         sprite = before.astype(np.uint8)
         sprite[difference] = after[difference]
 
-        sprites.setdefault(min(w, h), (sprite, difference))
+        sprites.setdefault(min(empty_box.width, empty_box.height), (sprite, difference))
 
     return sprites
 
@@ -59,7 +76,12 @@ def build_cat_sprites() -> dict[int, tuple[np.ndarray, np.ndarray]]:
 class FakePhone:
     """Телефон, который честно реагирует на тапы и кладёт котиков."""
 
-    def __init__(self, screens: list[Path] | None = None, out: Path | None = None):
+    def __init__(
+        self,
+        screens: list[Path] | None = None,
+        out: Path | None = None,
+        settings: Settings | None = None,
+    ):
         # По умолчанию: лидеры, потом пустое поле 8x8.
         self.screens = list(screens) if screens else [
             SHOTS / "shot_1.jpg",
@@ -68,6 +90,7 @@ class FakePhone:
         self.out = out or Path("img/tmp/fake")
         self.out.mkdir(parents=True, exist_ok=True)
 
+        self.reader = BoardReader(settings or Settings())
         self.sprites = build_cat_sprites()
 
         self.screen = cv2.imread(str(self.screens[0]))
@@ -102,7 +125,7 @@ class FakePhone:
             return
 
         cell = self._cell_at(board, x, y)
-        if cell is None or cell in board.cats:
+        if cell is None or (cell.row, cell.col) in board.cats:
             return
 
         self._draw_cat(board, cell)
@@ -112,24 +135,29 @@ class FakePhone:
         cv2.imwrite(str(path), self.screen)
 
         try:
-            return read_board(str(path))
+            return self.reader.read_path(str(path))
         except Exception:
             return None
 
-    def _cell_at(self, board, x: float, y: float) -> tuple[int, int] | None:
+    def _cell_at(self, board, x: float, y: float) -> Cell | None:
         """Ближайшая клетка к точке тапа, если тап вообще попал в поле."""
-        centers = [(board.tap_point(r, c), (r, c)) for r in range(board.n) for c in range(board.n)]
-        best = min(centers, key=lambda item: (item[0][0] - x) ** 2 + (item[0][1] - y) ** 2)
+        centers = [
+            (board.tap_point(row, col), Cell(row, col))
+            for row in range(board.n)
+            for col in range(board.n)
+        ]
+        best_point, best_cell = min(
+            centers, key=lambda item: (item[0][0] - x) ** 2 + (item[0][1] - y) ** 2
+        )
 
         limit = board.centers[1][0] - board.centers[0][0]
-        if (best[0][0] - x) ** 2 + (best[0][1] - y) ** 2 > limit**2:
+        if (best_point[0] - x) ** 2 + (best_point[1] - y) ** 2 > limit ** 2:
             return None
 
-        return best[1]
+        return best_cell
 
-    def _draw_cat(self, board, cell: tuple[int, int]) -> None:
-        row, col = cell
-        cx, cy = board.centers[row * board.n + col]
+    def _draw_cat(self, board, cell: Cell) -> None:
+        cx, cy = board.centers[cell.row * board.n + cell.col]
         x = int(cx - board.cell_w / 2)
         y = int(cy - board.cell_h / 2)
         w, h = board.cell_w, board.cell_h
