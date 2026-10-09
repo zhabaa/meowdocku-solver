@@ -50,11 +50,6 @@ class Solution:
         return "котики: " + ", ".join(str(cat) for cat in self.cats)
 
 
-# Временная совместимость: старое имя исключения и обёртка для кода,
-# который ещё не переведён на класс Solver. Уберём в следующих коммитах.
-InconsistentBoard = UniqueSolutionRequired
-
-
 def solve_from_board(board, time_limit: float = 30.0) -> Solution:
     return Solver(time_limit=time_limit).solve_board(board)
 
