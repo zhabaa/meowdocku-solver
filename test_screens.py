@@ -66,6 +66,30 @@ def test_cats_match_manual_look() -> None:
         )
 
 
+def test_button_not_confused_with_yellow_cells() -> None:
+    """Слипшиеся жёлтые клетки поля не должны читаться как кнопка.
+
+    На живом поле 10x10 жёлтая область давала после морфологии широкий блок
+    809x401 в нижней половине — детектор звал его кнопкой «уровень пройден»,
+    и бот трижды тапал в доску вместо перехода. Настоящая кнопка залита
+    на 95% и шире высоты в 4.7 раза; слипшиеся клетки — 45% и вдвое выше
+    ширины.
+    """
+    path = SHOTS / "live_10x10_yellow_field.png"
+    image = cv2.imread(str(path))
+
+    check(
+        find_level_done_button(image) is None,
+        "жёлтые клетки поля приняты за кнопку «уровень пройден»",
+    )
+
+    screen = detect(path)
+    check(
+        screen.kind == ScreenKind.BOARD,
+        f"поле с жёлтой областью определено как {screen.kind}, ожидалось поле",
+    )
+
+
 def test_button_not_found_on_boards() -> None:
     """Кнопка не должна появляться на поле, иначе бот уйдёт не туда."""
     for number in (3, 5, 6, 8):
@@ -141,6 +165,7 @@ def main() -> int:
         test_detects_all_screens,
         test_board_screens_are_readable,
         test_cats_match_manual_look,
+        test_button_not_confused_with_yellow_cells,
         test_button_not_found_on_boards,
         test_button_found_on_both_done_screens,
         test_hint_only_on_leaderboards,

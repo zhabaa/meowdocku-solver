@@ -26,6 +26,12 @@ BUTTON_MIN_AREA = 40000
 BUTTON_MIN_WIDTH_RATIO = 0.5
 BUTTON_MIN_CENTER_Y_RATIO = 0.6
 BUTTON_CLOSE_KERNEL = 25
+# Кнопка — плотный прямоугольник: залита почти целиком и сильно шире, чем
+# выше. Эти две проверки отсекают слипшиеся жёлтые клетки поля, которые
+# после морфологии тоже дают широкий блок в нижней половине, но залиты
+# меньше чем наполовину.
+BUTTON_MIN_FILL = 0.75
+BUTTON_MIN_ASPECT = 2.0
 
 # Жёлтая надпись на лидерах.
 HINT_HUE_LO, HINT_HUE_HI = 18, 32
@@ -90,12 +96,19 @@ def find_level_done_button(image: np.ndarray) -> Optional[tuple[int, int]]:
     for i in range(1, count):
         x, y, w, h, area = stats[i]
         center_y = y + h // 2
-        if (
-            area > BUTTON_MIN_AREA
-            and w > width * BUTTON_MIN_WIDTH_RATIO
-            and center_y > height * BUTTON_MIN_CENTER_Y_RATIO
-        ):
-            return (int(x + w // 2), int(center_y))
+
+        if area <= BUTTON_MIN_AREA:
+            continue
+        if w <= width * BUTTON_MIN_WIDTH_RATIO:
+            continue
+        if center_y <= height * BUTTON_MIN_CENTER_Y_RATIO:
+            continue
+        if area / float(w * h) < BUTTON_MIN_FILL:
+            continue
+        if w / float(h) < BUTTON_MIN_ASPECT:
+            continue
+
+        return (int(x + w // 2), int(center_y))
 
     return None
 
