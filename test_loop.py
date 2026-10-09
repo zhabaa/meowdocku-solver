@@ -252,6 +252,30 @@ def test_retries_transition_frame() -> None:
     check(len(broken.double_taps) == 8, f"двойных тапов {len(broken.double_taps)}, ожидалось 8")
 
 
+def test_tiny_board_rejected() -> None:
+    """Кадры перехода иногда читаются как поле 1x1 — это не доска."""
+    from field import Board
+    from solver import Solution
+
+    tiny = Board(
+        n=1,
+        colors=(("A",),),
+        cats=frozenset({(0, 0)}),
+        centers=((0.0, 0.0),),
+        tap_points=((0.0, 0.0),),
+        palette=((0, 0, 0),),
+        cell_w=10,
+        cell_h=10,
+    )
+
+    problem = main.inspect_board(tiny)
+    check(problem is not None, "поле 1x1 прошло проверку")
+    check(
+        problem is not None and "1x1" in problem,
+        f"в сообщении нет размера: {problem}",
+    )
+
+
 def test_board_is_inspected_before_tapping() -> None:
     """Поле с подсветкой поверх читается как поле, но котиков там больше,
     чем может быть. Такое до тапов не допускаем."""
@@ -367,6 +391,7 @@ def main_run() -> int:
         test_level_counted_once,
         test_waits_for_board_to_change,
         test_retries_transition_frame,
+        test_tiny_board_rejected,
         test_board_is_inspected_before_tapping,
         test_real_boards_pass_inspection,
         test_overlay_board_does_not_pass,

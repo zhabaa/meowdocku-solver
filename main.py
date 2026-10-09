@@ -44,6 +44,11 @@ MAX_SCREEN_RETRIES = 4
 
 NO_LIMIT = 0  # 0 — без ограничения
 
+# Настоящие поля не меньше 4x4. Меньшие — это ореолы вокруг иконок на
+# переходных кадрах, а не доски.
+MIN_BOARD_SIZE = 4
+MAX_BOARD_SIZE = 20
+
 
 def main() -> int:
     args = parse_args()
@@ -143,6 +148,11 @@ def inspect_board(board: Board) -> Optional[str]:
     """
     n = board.n
     cats = board.cats
+
+    # На живой игре поля от 4x4 и до 20x20. Кадры переходов иногда читаются
+    # как поле 1x1 — это ореол вокруг иконки, а не доска.
+    if not MIN_BOARD_SIZE <= n <= MAX_BOARD_SIZE:
+        return f"поле {n}x{n} — настоящие поля {MIN_BOARD_SIZE}x{MIN_BOARD_SIZE} и крупнее"
 
     if len(cats) > n:
         return f"найдено {len(cats)} котиков при поле {n}x{n}, а котиков всего {n}"
