@@ -90,17 +90,7 @@ def run_loop(dry_run: bool, max_levels: int, max_steps: int) -> int:
             return 1
 
         if screen.kind == ScreenKind.BOARD:
-            # Сначала убеждаемся, что это нормальная доска, и только потом
-            # что-то тапаем. Экран с подсветкой поверх поля тоже читается как
-            # поле, но котиков там «находится» больше, чем их может быть.
-            board = screen.board
-            problem = inspect_board(board)
-            if problem is not None:
-                print(f"Поле не годится: {problem}")
-                print(f"Последний скриншот: {LIVE_SHOT}")
-                return 1
-
-            if not solve_level(board, LIVE_SHOT, dry_run):
+            if not solve_level(screen.board, LIVE_SHOT, dry_run):
                 return 1
 
             if dry_run:
@@ -180,22 +170,33 @@ def shoot_stable():
     """Снять экран и дождаться, пока он перестанет меняться.
 
     Игра переезжает между экранами с анимацией, и промежуточный кадр читается
-    плохо: поле 10x10 собиралось с 12 цветами вместо 10. Такое проходит за
-    пару секунд, поэтому такой кадр просто пропускаем.
+    плохо: поле 10x10 собиралось с 12 цветов вместо 10, а кадр перехода после
+    тапа по лидерам читался как поле 1x1. Такое проходит за пару секунд,
+    поэтому такой кадр просто пропускаем.
     """
+    problem = ""
+
     for attempt in range(1, MAX_SCREEN_RETRIES + 1):
         screen = shoot(LIVE_SHOT)
 
-        if screen.kind != ScreenKind.UNKNOWN:
+        if screen.kind == ScreenKind.UNKNOWN:
+            problem = f"экран не опознан: {screen.reason}"
+        elif screen.kind == ScreenKind.BOARD:
+            problem = inspect_board(screen.board)
+            if problem is None:
+                describe(screen)
+                return screen
+            problem = f"поле не годится: {problem}"
+        else:
             describe(screen)
             return screen
 
         if attempt == 1:
-            print(f"Экран не опознан: {screen.reason}")
+            print(problem)
         print(f"  пробую ещё раз ({attempt}/{MAX_SCREEN_RETRIES})")
         time.sleep(POLL_INTERVAL)
 
-    print(f"Экран так и не распознался: {screen.reason}")
+    print(f"Экран так и не пришёл в норму: {problem}")
     return None
 
 

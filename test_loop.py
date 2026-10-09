@@ -276,6 +276,55 @@ def test_tiny_board_rejected() -> None:
     )
 
 
+def test_retries_bad_board_frame() -> None:
+    """Кадр перехода, прочитанный как поле 1x1, переснимается, а не роняет бота.
+
+    На живом прогоне после тапа по лидерам приходил кадр, который читался
+    как поле 1x1. Проверка доски его отвергала, и бот сразу останавливался,
+    хотя через секунду на экране было нормальное поле.
+    """
+    from field import Board
+
+    tiny = Board(
+        n=1,
+        colors=(("A",),),
+        cats=frozenset({(0, 0)}),
+        centers=((0.0, 0.0),),
+        tap_points=((0.0, 0.0),),
+        palette=((0, 0, 0),),
+        cell_w=10,
+        cell_h=10,
+    )
+
+    phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
+
+    from screens import BoardScreen
+
+    tiny_screen = BoardScreen(kind="board", board=tiny)
+    real_shoot = main.shoot
+    shoot_calls = {"n": 0}
+
+    # Первые два снимка — мусорное «поле 1x1», дальше нормальное поле.
+    def counting_shoot(path):
+        shoot_calls["n"] += 1
+        if shoot_calls["n"] <= 2:
+            return tiny_screen
+        return real_shoot(path)
+
+    with mock.patch.object(main, "OUT_DIR", phone.out), \
+         mock.patch.object(main, "LIVE_SHOT", phone.out / "live.png"), \
+         mock.patch.object(main.emulate, "capture", side_effect=phone.capture), \
+         mock.patch.object(main.emulate, "tap", side_effect=phone.tap), \
+         mock.patch.object(main.emulate, "double_tap", side_effect=phone.double_tap), \
+         mock.patch.object(main.emulate, "is_connected", return_value=True), \
+         mock.patch.object(main, "shoot", side_effect=counting_shoot), \
+         mock.patch("time.sleep"):
+        code = main.run_loop(dry_run=False, max_levels=1, max_steps=10)
+
+    check(code == 0, f"вернулся код {code}, ожидался 0")
+    check(len(phone.double_taps) == 8, f"двойных тапов {len(phone.double_taps)}, ожидалось 8")
+
+
 def test_board_is_inspected_before_tapping() -> None:
     """Поле с подсветкой поверх читается как поле, но котиков там больше,
     чем может быть. Такое до тапов не допускаем."""
@@ -392,6 +441,7 @@ def main_run() -> int:
         test_waits_for_board_to_change,
         test_retries_transition_frame,
         test_tiny_board_rejected,
+        test_retries_bad_board_frame,
         test_board_is_inspected_before_tapping,
         test_real_boards_pass_inspection,
         test_overlay_board_does_not_pass,
