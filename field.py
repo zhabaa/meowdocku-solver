@@ -143,7 +143,12 @@ def _find_cells(image: np.ndarray) -> list[tuple[int, int, int, int]]:
 
 
 def _grid_of(boxes: list[tuple[int, int, int, int]]) -> tuple[int, dict]:
-    """Разложить боксы по строкам и столбцам. Возвращает N и клетку на (r, c)."""
+    """Разложить боксы по строкам и столбцам. Возвращает N и клетку на (r, c).
+
+    Клетку с котиком маска насыщенности может не найти: морда котика серая,
+    и клетка распадается на мелкие куски. Тогда сетку достраиваем по найденным
+    соседям — центры строк и столбцов уже известны, размер клетки тоже.
+    """
     cell_h = float(np.median([b[3] for b in boxes]))
     cell_w = float(np.median([b[2] for b in boxes]))
 
@@ -157,10 +162,8 @@ def _grid_of(boxes: list[tuple[int, int, int, int]]) -> tuple[int, dict]:
         raise BoardReadError(f"Поле не квадратное: {n_rows} строк, {n_cols} столбцов")
 
     n = n_rows
-    if len(boxes) != n * n:
-        raise BoardReadError(f"Найдено {len(boxes)} клеток, а {n}x{n} = {n * n}")
-
     grid: dict[tuple[int, int], tuple[int, int, int, int]] = {}
+
     for box in boxes:
         cy = box[1] + box[3] / 2
         cx = box[0] + box[2] / 2
@@ -170,7 +173,47 @@ def _grid_of(boxes: list[tuple[int, int, int, int]]) -> tuple[int, dict]:
             raise BoardReadError(f"Две клетки попали в одну позицию ({row},{col})")
         grid[(row, col)] = box
 
+    if len(grid) != n * n:
+        missing = [
+            (row, col) for row in range(n) for col in range(n) if (row, col) not in grid
+        ]
+        if not _grid_is_regular(row_centers, col_centers, cell_w, cell_h):
+            raise BoardReadError(
+                f"Найдено {len(grid)} клеток, а {n}x{n} = {n * n}, "
+                f"и достроить не выходит: нерегулярная сетка"
+            )
+
+        width = int(round(cell_w))
+        height = int(round(cell_h))
+        for row, col in missing:
+            cy = row_centers[row]
+            cx = col_centers[col]
+            grid[(row, col)] = (
+                int(round(cx - width / 2)),
+                int(round(cy - height / 2)),
+                width,
+                height,
+            )
+
     return n, grid
+
+
+def _grid_is_regular(
+    row_centers: list[float],
+    col_centers: list[float],
+    cell_w: float,
+    cell_h: float,
+) -> bool:
+    """Ровные ли шаги между соседними строками и столбцами."""
+    for centers, cell in ((row_centers, cell_h), (col_centers, cell_w)):
+        steps = [b - a for a, b in zip(centers, centers[1:])]
+        if not steps:
+            continue
+        median = float(np.median(steps))
+        if any(abs(step - median) > cell * 0.2 for step in steps):
+            return False
+
+    return True
 
 
 def _ring_pixels(image: np.ndarray, box: tuple[int, int, int, int]) -> np.ndarray:

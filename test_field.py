@@ -76,6 +76,29 @@ def check(condition: bool, message: str) -> None:
         failures.append(message)
 
 
+def test_grey_cat_cell() -> None:
+    """Котик с серой мордой не попадает в маску насыщенности.
+
+    Такая клетка распадается на мелкие куски и в списке клеток её нет. Без
+    достраивания сетки поле 9x9 читалось как 8 строк с одной дыркой, и бот
+    падал сразу после постановки первого котика.
+    """
+    path = SHOTS_DIR / "live_9x9_cat_on_grey.png"
+    board = read_board(str(path))
+
+    check(board.n == 9, f"поле {board.n}x{board.n}, ожидалось 9x9")
+    check(
+        set(board.cats) == {(7, 6)},
+        f"котики {sorted(board.cats)}, ожидался только (7,6)",
+    )
+
+    from solver import solve_from_board
+
+    solution = solve_from_board(board)
+    check((7, 6) in solution, f"котик (7,6) не попал в решение {solution}")
+    check(len(solution) == 9, f"в решении {len(solution)} кошек, ожидалось 9")
+
+
 def test_live_screens() -> None:
     """Скриншоты с настоящего телефона: 10x10, один с найденным котом.
 
@@ -218,7 +241,13 @@ def test_bad_input() -> None:
 
 
 def main() -> int:
-    for test in (test_real_screens, test_live_screens, test_synthetic_board, test_bad_input):
+    for test in (
+        test_real_screens,
+        test_live_screens,
+        test_grey_cat_cell,
+        test_synthetic_board,
+        test_bad_input,
+    ):
         test()
         print(f"{test.__name__}: выполнен")
 
