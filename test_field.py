@@ -11,6 +11,7 @@ import numpy as np
 from field import BoardReadError, read_board
 
 IMG_DIR = Path(__file__).parent / "img" / "tmp"
+SHOTS_DIR = Path(__file__).parent / "img" / "screenshots"
 
 # Что ожидаем увидеть на каждом реальном скриншоте.
 EXPECTED = {
@@ -73,6 +74,41 @@ failures: list[str] = []
 def check(condition: bool, message: str) -> None:
     if not condition:
         failures.append(message)
+
+
+def test_live_screens() -> None:
+    """Скриншоты с настоящего телефона: 10x10, один с найденным котом.
+
+    Отдельно важный случай: после постановки котика рядом со счётом очков
+    появляется блик размером 70x70, и при прежнем допуске 0.3 он проходил
+    как клетка — поле читалось как 11 строк вместо 10.
+    """
+    empty = SHOTS_DIR / "live_10x10_empty.png"
+    with_cat = SHOTS_DIR / "live_10x10_one_cat.png"
+
+    board = read_board(str(empty))
+    check(board.n == 10, f"поле {board.n}x{board.n}, ожидалось 10x10")
+    check(board.cats == frozenset(), f"на пустом поле котики {sorted(board.cats)}")
+
+    board = read_board(str(with_cat))
+    check(board.n == 10, f"поле {board.n}x{board.n} после тапа, ожидалось 10x10")
+    check(
+        set(board.cats) == {(0, 4)},
+        f"после тапа котики {sorted(board.cats)}, ожидался только (0,4)",
+    )
+
+    # Раскладка не должна поехать от того, что в клетке кто-то есть.
+    from solver import solve_from_board
+
+    solution = solve_from_board(board)
+    check(
+        (0, 4) in solution,
+        f"котик (0,4) не попал в решение {solution}",
+    )
+    check(
+        len([c for c in solution if c not in board.cats]) == 9,
+        "после одного тапа осталось не 9 кошек",
+    )
 
 
 def test_real_screens() -> None:
@@ -182,7 +218,7 @@ def test_bad_input() -> None:
 
 
 def main() -> int:
-    for test in (test_real_screens, test_synthetic_board, test_bad_input):
+    for test in (test_real_screens, test_live_screens, test_synthetic_board, test_bad_input):
         test()
         print(f"{test.__name__}: выполнен")
 
