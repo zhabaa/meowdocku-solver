@@ -8,10 +8,10 @@ import random
 import time
 from pathlib import Path
 
-from config import Settings
-from domain import Cell
-from field import read_board
-from solver import Solver, UniqueSolutionRequired
+from meowdoku_bot.config import Settings
+from meowdoku_bot.domain import Cell
+from meowdoku_bot.field import read_board
+from meowdoku_bot.solver import Solver, UniqueSolutionRequired
 
 IMG_DIR = Path(__file__).parent / "img" / "tmp"
 SHOTS_DIR = Path(__file__).parent / "img" / "screenshots"
@@ -250,6 +250,49 @@ def test_accepts_cells_and_tuples() -> None:
     check(cat in as_cells, "котик из решения не подтвердился самим собой")
 
 
+def test_locked_cat_does_not_touch_row_above() -> None:
+    """Уже стоящий котик тоже не касается соседей — уровень 421 с телефона.
+
+    Раньше для строки с найденным котиком проверка касания пропускалась, и
+    солвер насчитывал второе, заведомо неправильное решение: поле 8x8 с одним
+    котиком объявлялось неоднозначным, и бот отказывался играть.
+    """
+    colors = [
+        "AAAABCCC",
+        "DDBBBCCC",
+        "DDDDBBBC",
+        "DDEFGBCC",
+        "EEEGGCCC",
+        "EGGGCCHC",
+        "EEEGGHHC",
+        "EEHHHHHH",
+    ]
+    solver = make_solver()
+    expected = [Cell(0, 2), Cell(1, 0), Cell(2, 5), Cell(3, 3), Cell(4, 1), Cell(5, 7), Cell(6, 4), Cell(7, 6)]
+
+    check(solver.is_unique(colors, [Cell(6, 4)]), "поле уровня 421 признано неоднозначным")
+
+    try:
+        solution = solver.solve(colors, [Cell(6, 4)])
+    except UniqueSolutionRequired as error:
+        failures.append(f"уровень 421 не решён: {error}")
+        return
+
+    got = sorted(str(cat) for cat in solution)
+    want = sorted(str(cat) for cat in expected)
+    check(got == want, f"получено {got}, ожидалось {want}")
+
+
+def test_locked_cat_touching_row_above_is_rejected() -> None:
+    """Котик, которого поставили на поле, тоже обязан уважать касание."""
+    colors = ["ABCD", "ABCD", "ABCD", "ABCD"]
+    try:
+        make_solver().solve(colors, [Cell(0, 0), Cell(1, 1)])
+        failures.append("касающиеся найденные котики не отвергнуты")
+    except UniqueSolutionRequired as error:
+        check("строк" in str(error) or "решений нет" in str(error), f"неожиданный текст ошибки: {error}")
+
+
 def main() -> int:
     for test in (
         test_matches_brute_force_on_real_screens,
@@ -258,6 +301,8 @@ def main() -> int:
         test_contradictory_found_cats,
         test_ambiguous_board_is_rejected,
         test_unsolvable_board_is_rejected,
+        test_locked_cat_does_not_touch_row_above,
+        test_locked_cat_touching_row_above_is_rejected,
         test_solution_respects_rules,
         test_random_boards_against_brute_force,
         test_speed_on_synthetic_large_board,

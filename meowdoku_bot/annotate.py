@@ -10,9 +10,9 @@ from typing import Sequence
 import cv2
 import numpy as np
 
-from domain import Cell
-from field import Board
-from logging_setup import get_logger
+from .domain import Cell
+from .field import Board
+from .logging_setup import get_logger
 
 log = get_logger("annotate")
 

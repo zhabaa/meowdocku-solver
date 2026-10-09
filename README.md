@@ -42,16 +42,22 @@ MEOWDOKU_CAT_DARK_RATIO=0.2 .venv/bin/python main.py
 ## Структура
 
 ```
-main.py        разбор аргументов, сборка зависимостей, запуск
-config.py      все 43 порога с объяснением, откуда значение
-logging_setup.py  логгер
-domain.py      Cell, CellBox, ScreenKind
-field.py       чтение поля: CellDetector, ColorReader, CatDetector, BoardReader
-screens.py     определение экрана: ScreenClassifier и наследники Screen
-solver.py      Solver — поиск единственной расстановки
-device.py      AdbDevice — скриншоты и тапы через adb
-annotate.py    Annotator — разбор поверх скриншота
-game.py        игровой цикл: BoardValidator, LevelPlayer, GameBot
+main.py           разбор аргументов, сборка зависимостей, запуск
+take_screenshot.py  снять скриншот с телефона в img/tmp
+
+meowdoku_bot/
+  config.py       все 43 порога с объяснением, откуда значение
+  logging_setup.py  логгер
+  domain.py       Cell, CellBox, ScreenKind
+  field.py        чтение поля: CellDetector, ColorReader, CatDetector, BoardReader
+  screens.py      определение экрана: ScreenClassifier и наследники Screen
+  solver.py       Solver — поиск единственной расстановки
+  device.py       AdbDevice — скриншоты и тапы через adb
+  annotate.py     Annotator — разбор поверх скриншота
+  game.py         игровой цикл: BoardValidator, LevelPlayer, GameBot
+
+fake_phone.py     подделка телефона для тестов цикла
+test_*.py         тесты, каждый запускается сам по себе
 ```
 
 Зависимости идут в одну сторону, циклов нет:
@@ -133,7 +139,7 @@ player, validator, annotator, settings, work_dir)`. Поэтому в теста
 
 ## Пороги
 
-Все значения живут в `config.py` с комментарием, откуда каждое. Самые
+Все значения живут в `meowdoku_bot/config.py` с комментарием, откуда каждое. Самые
 неочевидные:
 
 | Порог | Значение | Почему |
@@ -152,7 +158,7 @@ player, validator, annotator, settings, work_dir)`. Поэтому в теста
 .venv/bin/python test_field.py
 .venv/bin/python test_solver.py
 .venv/bin/python test_screens.py
-.venv/bin/python test_emulate.py
+.venv/bin/python test_device.py
 .venv/bin/python test_loop.py
 ```
 

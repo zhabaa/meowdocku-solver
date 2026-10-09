@@ -4,12 +4,13 @@
 """
 
 from pathlib import Path
+import random
 
 import cv2
 import numpy as np
 
-from domain import Cell
-from field import BoardReadError, read_board
+from meowdoku_bot.domain import Cell
+from meowdoku_bot.field import BoardReadError, BoardReader, read_board
 
 IMG_DIR = Path(__file__).parent / "img" / "tmp"
 SHOTS_DIR = Path(__file__).parent / "img" / "screenshots"
@@ -134,7 +135,7 @@ def test_grey_cat_cell() -> None:
         f"котики {sorted(board.cats)}, ожидался только (7,6)",
     )
 
-    from solver import solve_from_board
+    from meowdoku_bot.solver import solve_from_board
 
     solution = solve_from_board(board)
     check(Cell(7, 6) in solution, f"котик (7,6) не попал в решение {solution}")
@@ -163,7 +164,7 @@ def test_live_screens() -> None:
     )
 
     # Раскладка не должна поехать от того, что в клетке кто-то есть.
-    from solver import solve_from_board
+    from meowdoku_bot.solver import solve_from_board
 
     solution = solve_from_board(board)
     board_cells = [Cell(row, col) for row, col in board.cats]
@@ -218,6 +219,54 @@ def test_real_screens() -> None:
                 )
 
 
+def _connected_regions(n: int, count: int, seed: int) -> list[list[int]]:
+    """Разбить поле на пятна, связанные по сторонам, — как в настоящей игре.
+
+    Новое пятно всегда начинается рядом с уже покрашенной клеткой, поэтому
+    каждый цвет остаётся одной связной областью.
+    """
+    rng = random.Random(seed)
+    grid = [[-1] * n for _ in range(n)]
+    steps = ((-1, 0), (1, 0), (0, -1), (0, 1))
+
+    def free_neighbors(row: int, col: int):
+        for dr, dc in steps:
+            other = (row + dr, col + dc)
+            if 0 <= other[0] < n and 0 <= other[1] < n and grid[other[0]][other[1]] != -1:
+                yield other
+
+    for color in range(count):
+        borders = [
+            (row, col)
+            for row in range(n)
+            for col in range(n)
+            if grid[row][col] == -1 and any(free_neighbors(row, col))
+        ]
+        empty = [
+            (row, col) for row in range(n) for col in range(n) if grid[row][col] == -1
+        ]
+        start = rng.choice(borders or empty)
+        grid[start[0]][start[1]] = color
+
+        frontier = [start]
+        while frontier:
+            row, col = frontier.pop()
+            fresh = [cell for cell in free_neighbors(row, col) if grid[cell[0]][cell[1]] == -1]
+            if fresh:
+                cell = rng.choice(fresh)
+                grid[cell[0]][cell[1]] = color
+                frontier.append(cell)
+
+    # Оставшиеся клетки примыкают к пятнам, иначе сетка была бы несвязной.
+    while any(value == -1 for row in grid for value in row):
+        row, col = next(
+            (r, c) for r in range(n) for c in range(n) if grid[r][c] == -1 and list(free_neighbors(r, c))
+        )
+        grid[row][col] = grid[next(free_neighbors(row, col))[0]][next(free_neighbors(row, col))[1]]
+
+    return grid
+
+
 def test_synthetic_board() -> None:
     """Поле, нарисованное программно, должно читаться без ошибок."""
     n = 7
@@ -237,12 +286,13 @@ def test_synthetic_board() -> None:
 
     size = origin_x * 2 + n * (cell + gap)
     image = np.full((size, size, 3), 250, dtype=np.uint8)
+    regions = _connected_regions(n, n, seed=20261009)
 
     for row in range(n):
         for col in range(n):
             x = origin_x + col * (cell + gap)
             y = origin_y + row * (cell + gap)
-            image[y : y + cell, x : x + cell] = colors_bgr[(row + col) % n]
+            image[y : y + cell, x : x + cell] = colors_bgr[regions[row][col]]
 
     path = IMG_DIR / "SYNTHETIC.png"
     cv2.imwrite(str(path), image)
@@ -283,6 +333,37 @@ def test_bad_input() -> None:
         pass
 
 
+def test_color_must_be_one_connected_region() -> None:
+    """Цвет — это одно пятно, связанное по сторонам, а не по диагоналям.
+
+    Правило игры: клетки одного цвета всегда соприкасаются боками. Если два
+    пятна одного цвета не соединены, значит палитра прочитана неверно —
+    тапать нельзя.
+    """
+    check_region = BoardReader._check_regions_contiguous
+
+    # Пятно цельное — проходит.
+    try:
+        check_region(3, ("AAA", "AAA", "AAB"))
+        check(True, "")
+    except BoardReadError as error:
+        failures.append(f"цельное пятно отвергнуто: {error}")
+
+    # Тот же цвет по диагонали — пятна не соединены, поле отвергаем.
+    try:
+        check_region(2, ("AB", "BA"))
+        failures.append("цвет, сошедшийся только по диагонали, не отвергнут")
+    except BoardReadError as error:
+        check("распался" in str(error), f"неожиданный текст ошибки: {error}")
+
+    # Два раздельных пятна одного цвета — тоже отвергаем.
+    try:
+        check_region(3, ("ABA", "BBB", "ABA"))
+        failures.append("разорванное на пятна пятно не отвергнуто")
+    except BoardReadError as error:
+        check("распался" in str(error), f"неожиданный текст ошибки: {error}")
+
+
 def main() -> int:
     for test in (
         test_real_screens,
@@ -292,6 +373,7 @@ def main() -> int:
         test_grey_cat_cell,
         test_synthetic_board,
         test_bad_input,
+        test_color_must_be_one_connected_region,
     ):
         test()
         print(f"{test.__name__}: выполнен")

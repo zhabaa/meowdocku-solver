@@ -9,8 +9,8 @@ import subprocess
 import time
 from pathlib import Path
 
-from config import DeviceSettings, Settings, TimingSettings
-from logging_setup import get_logger
+from .config import DeviceSettings, Settings, TimingSettings
+from .logging_setup import get_logger
 
 log = get_logger("device")
 

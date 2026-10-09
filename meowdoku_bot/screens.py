@@ -16,10 +16,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from config import ScreenDetectionSettings, Settings
-from domain import ScreenKind
-from field import Board, BoardReadError, BoardReader
-from logging_setup import get_logger
+from .config import ScreenDetectionSettings, Settings
+from .domain import ScreenKind
+from .field import Board, BoardReadError, BoardReader
+from .logging_setup import get_logger
 
 log = get_logger("screens")
 

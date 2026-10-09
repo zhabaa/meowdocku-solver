@@ -12,13 +12,13 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from annotate import Annotator
-from config import Settings
-from domain import Cell, ScreenKind
-from field import Board
-from logging_setup import get_logger
-from screens import BoardScreen, Screen, ScreenClassifier, TapScreen
-from solver import Solution, Solver, UniqueSolutionRequired
+from .annotate import Annotator
+from .config import Settings
+from .domain import Cell, ScreenKind
+from .field import Board
+from .logging_setup import get_logger
+from .screens import BoardScreen, Screen, ScreenClassifier, TapScreen
+from .solver import Solution, Solver, UniqueSolutionRequired
 
 log = get_logger("game")
 

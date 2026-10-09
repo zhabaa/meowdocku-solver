@@ -199,7 +199,7 @@ def from_env(base: Settings | None = None) -> Settings:
             groups[group_name] = replace(group, **replacements)
 
     if changed:
-        from logging_setup import get_logger
+        from meowdoku_bot.logging_setup import get_logger
 
         get_logger("config").info(
             "настройки переопределены из окружения: %s", ", ".join(changed)

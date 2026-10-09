@@ -13,8 +13,8 @@ import time
 from dataclasses import dataclass
 from typing import Sequence
 
-from domain import Cell
-from logging_setup import get_logger
+from .domain import Cell
+from .logging_setup import get_logger
 
 log = get_logger("solver")
 
@@ -205,12 +205,17 @@ class Solver:
                 )
                 return
 
-            if row in locked_rows:
-                search(row + 1)
-                return
-
             # Кошка выше по соседней строке, если она там есть.
             previous_cat_column = placement[row - 1] if row > 0 else None
+
+            if row in locked_rows:
+                # Найденного котика мы не выбирали, но касаться кошки в строке
+                # выше он тоже не должен: иначе в список попадут заведомо
+                # неправильные расстановки.
+                if previous_cat_column is not None and abs(placement[row] - previous_cat_column) <= 1:
+                    return
+                search(row + 1)
+                return
 
             for col in range(size):
                 if col in row_by_column:

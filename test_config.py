@@ -7,7 +7,7 @@ import os
 from contextlib import contextmanager
 from dataclasses import FrozenInstanceError
 
-from config import Settings, from_env
+from meowdoku_bot.config import Settings, from_env
 
 failures: list[str] = []
 

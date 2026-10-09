@@ -14,14 +14,14 @@ from unittest import mock
 import cv2
 import numpy as np
 
-from annotate import Annotator
-from config import Settings
-from domain import Cell, ScreenKind
+from meowdoku_bot.annotate import Annotator
+from meowdoku_bot.config import Settings
+from meowdoku_bot.domain import Cell, ScreenKind
 from fake_phone import SHOTS, FakePhone
-from field import Board, BoardReader
-from game import EXIT_FAILED, EXIT_OK, BoardValidator, GameBot, LevelPlayer
-from screens import BoardScreen, ScreenClassifier
-from solver import Solver, UniqueSolutionRequired
+from meowdoku_bot.field import Board, BoardReader
+from meowdoku_bot.game import EXIT_FAILED, EXIT_OK, BoardValidator, GameBot, LevelPlayer
+from meowdoku_bot.screens import BoardScreen, ScreenClassifier
+from meowdoku_bot.solver import Solver, UniqueSolutionRequired
 
 failures: list[str] = []
 

@@ -10,14 +10,13 @@
 """
 
 from pathlib import Path
-from unittest import mock
 
 import cv2
 import numpy as np
 
-from config import Settings
-from domain import Cell
-from field import BoardReader
+from meowdoku_bot.config import Settings
+from meowdoku_bot.domain import Cell
+from meowdoku_bot.field import BoardReader
 
 SHOTS = Path(__file__).parent / "img" / "screenshots"
 
@@ -177,14 +176,3 @@ class FakePhone:
 
         # Перезаписываем снимок: тот же файл читает и бот, и тест.
         cv2.imwrite(str(self.out / "probe.png"), self.screen)
-
-
-def patch_all(phone: FakePhone, main_module):
-    """Контексты подмены adb-слоя на подделку телефона."""
-    return (
-        mock.patch.object(main_module.emulate, "is_connected", side_effect=phone.is_connected),
-        mock.patch.object(main_module.emulate, "capture", side_effect=phone.capture),
-        mock.patch.object(main_module.emulate, "tap", side_effect=phone.tap),
-        mock.patch.object(main_module.emulate, "double_tap", side_effect=phone.double_tap),
-        mock.patch("time.sleep"),
-    )

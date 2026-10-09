@@ -1,7 +1,8 @@
 """Запуск бота Meowdoku.
 
 Здесь только разбор аргументов и сборка зависимостей: весь игровой цикл
-в game.py, чтение поля в field.py, решение в solver.py.
+в meowdoku_bot/game.py, чтение поля в meowdoku_bot/field.py,
+решение в meowdoku_bot/solver.py.
 
 Запуск:
     .venv/bin/python main.py                # один уровень
@@ -15,14 +16,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from annotate import Annotator, annotate
-from config import DEFAULT_LOG_FILE, Settings, from_env
-from domain import Cell
-from field import BoardReader
-from game import EXIT_FAILED, EXIT_OK, BoardValidator, GameBot, LevelPlayer
-from logging_setup import setup_logging
-from screens import BoardScreen, ScreenClassifier, ScreenKind, Screen
-from solver import Solver, UniqueSolutionRequired
+from meowdoku_bot.annotate import Annotator, annotate
+from meowdoku_bot.config import DEFAULT_LOG_FILE, Settings, from_env
+from meowdoku_bot.domain import Cell
+from meowdoku_bot.field import BoardReader
+from meowdoku_bot.game import EXIT_FAILED, EXIT_OK, BoardValidator, GameBot, LevelPlayer
+from meowdoku_bot.logging_setup import setup_logging
+from meowdoku_bot.screens import BoardScreen, ScreenClassifier, ScreenKind, Screen
+from meowdoku_bot.solver import Solver, UniqueSolutionRequired
 
 DEFAULT_MAX_LEVELS = 1
 DEFAULT_MAX_STEPS = 0  # 0 — без ограничения
@@ -72,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def build(settings: Settings) -> GameBot:
     """Собрать бота из настоящих или подставленных частей."""
-    from emulate import AdbDevice
+    from meowdoku_bot.device import AdbDevice
 
     work_dir = Path(settings.device.work_dir)
     reader = BoardReader(settings)

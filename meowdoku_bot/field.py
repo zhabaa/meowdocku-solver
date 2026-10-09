@@ -17,9 +17,9 @@ from typing import Sequence
 import cv2
 import numpy as np
 
-from config import BoardReadingSettings, CatDetectionSettings, Settings
-from domain import Cell, CellBox
-from logging_setup import get_logger
+from .config import BoardReadingSettings, CatDetectionSettings, Settings
+from .domain import Cell, CellBox
+from .logging_setup import get_logger
 
 log = get_logger("field")
 
@@ -425,8 +425,10 @@ class BoardReader:
     ) -> None:
         """Каждый цвет должен образовывать одну связную область.
 
-        Разрыв внутри цвета означает, что палитра считана неверно: два разных
-        цвета слились в один. Это главный признак плохого чтения поля.
+        Связность по сторонам, а не по диагоналям: правило игры говорит, что
+        клетки одного цвета соприкасаются боками. Два пятна одного цвета
+        означают, что палитра считана неверно — два разных цвета слились в
+        один. Это главный признак плохого чтения поля.
         """
         for letter in sorted({color for row in colors for color in row}):
             cells = {
@@ -436,10 +438,12 @@ class BoardReader:
                 if colors[row][col] == letter
             }
             seen: set[Cell] = set()
+            parts = 0
 
             for start in sorted(cells):
                 if start in seen:
                     continue
+                parts += 1
                 stack = [start]
                 seen.add(start)
                 while stack:
@@ -450,8 +454,10 @@ class BoardReader:
                             seen.add(neighbor)
                             stack.append(neighbor)
 
-            if len(seen) != len(cells):
-                raise BoardReadError(f"цвет {letter} распался на несколько областей")
+            if parts > 1:
+                raise BoardReadError(
+                    f"цвет {letter} распался на {parts} области, а должен быть один"
+                )
 
 
 def read_board(path: str) -> Board:

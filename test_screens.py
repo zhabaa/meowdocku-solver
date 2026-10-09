@@ -8,8 +8,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from field import Board
-from screens import ScreenClassifier, ScreenKind, detect
+from meowdoku_bot.field import Board
+from meowdoku_bot.screens import ScreenClassifier, ScreenKind, detect
 
 SHOTS = Path(__file__).parent / "img" / "screenshots"
 

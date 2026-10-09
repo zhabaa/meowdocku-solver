@@ -7,8 +7,8 @@ import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from domain import Cell, CellBox, ScreenKind
-from logging_setup import LOGGER_NAME, get_logger, setup_logging
+from meowdoku_bot.domain import Cell, CellBox, ScreenKind
+from meowdoku_bot.logging_setup import LOGGER_NAME, get_logger, setup_logging
 
 failures: list[str] = []
 

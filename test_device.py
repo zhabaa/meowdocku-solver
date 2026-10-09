@@ -2,15 +2,15 @@
 
 Подменяем subprocess.run, поэтому тесты работают без устройства.
 
-Запуск: .venv/bin/python test_emulate.py
+Запуск: .venv/bin/python test_device.py
 """
 
 from pathlib import Path
 from unittest import mock
 
-import emulate
-from config import DeviceSettings, Settings, TimingSettings
-from emulate import AdbDevice, AdbError
+import meowdoku_bot.device as device_module
+from meowdoku_bot.config import DeviceSettings, Settings, TimingSettings
+from meowdoku_bot.device import AdbDevice, AdbError
 
 failures: list[str] = []
 
@@ -39,7 +39,7 @@ def test_double_tap_is_one_command() -> None:
     """Двойной тап обязан уйти одной командой, иначе между тапами вылезает adb."""
     device = make_device()
 
-    with mock.patch.object(emulate.subprocess, "run", return_value=FakeResult()) as run:
+    with mock.patch.object(device_module.subprocess, "run", return_value=FakeResult()) as run:
         device.double_tap(100.4, 200.9)
 
     check(run.call_count == 1, f"ожидался 1 вызов adb, было {run.call_count}")
@@ -63,7 +63,7 @@ def test_double_tap_is_one_command() -> None:
 def test_capture_writes_to_device_then_pulls() -> None:
     device = make_device()
 
-    with mock.patch.object(emulate.subprocess, "run", return_value=FakeResult()) as run, \
+    with mock.patch.object(device_module.subprocess, "run", return_value=FakeResult()) as run, \
          mock.patch.object(device, "is_connected", return_value=True), \
          mock.patch.object(Path, "mkdir", return_value=None), \
          mock.patch.object(Path, "exists", return_value=True), \
@@ -92,7 +92,7 @@ def test_adb_error_is_reported() -> None:
     device = make_device()
     failing = FakeResult(stderr="device offline", returncode=1)
 
-    with mock.patch.object(emulate.subprocess, "run", return_value=failing):
+    with mock.patch.object(device_module.subprocess, "run", return_value=failing):
         try:
             device.adb("shell", "true")
             failures.append("ошибка adb не поднята")
@@ -110,8 +110,8 @@ def test_is_connected() -> None:
 
     for output, expected in outputs:
         device = make_device()
-        with mock.patch.object(emulate.shutil, "which", return_value="/usr/bin/adb"), \
-             mock.patch.object(emulate.subprocess, "run", return_value=FakeResult(output)):
+        with mock.patch.object(device_module.shutil, "which", return_value="/usr/bin/adb"), \
+             mock.patch.object(device_module.subprocess, "run", return_value=FakeResult(output)):
             check(
                 device.is_connected() == expected,
                 f"вывод {output!r}: ожидалось {expected}",
@@ -121,7 +121,7 @@ def test_is_connected() -> None:
 def test_wait_for_device_gives_up() -> None:
     device = make_device()
     with mock.patch.object(device, "is_connected", return_value=False), \
-         mock.patch.object(emulate.time, "sleep"):
+         mock.patch.object(device_module.time, "sleep"):
         try:
             device.wait_for_device(timeout=0.05)
             failures.append("ожидалась ошибка ожидания устройства")
@@ -133,7 +133,7 @@ def test_paths_from_settings() -> None:
     """Пути на устройстве берутся из настроек, а не зашиты в код."""
     device = make_device(device=DeviceSettings(device_dir="/sdcard/other", device_file="/sdcard/other/a.png"))
 
-    with mock.patch.object(emulate.subprocess, "run", return_value=FakeResult()) as run, \
+    with mock.patch.object(device_module.subprocess, "run", return_value=FakeResult()) as run, \
          mock.patch.object(device, "is_connected", return_value=True), \
          mock.patch.object(Path, "mkdir", return_value=None), \
          mock.patch.object(Path, "exists", return_value=True), \
