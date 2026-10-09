@@ -50,6 +50,7 @@ def test_double_tap_is_one_command() -> None:
 
 def test_capture_writes_to_device_then_pulls() -> None:
     with mock.patch.object(emulate.subprocess, "run", return_value=FakeResult()) as run, \
+         mock.patch.object(emulate, "is_connected", return_value=True), \
          mock.patch.object(Path, "mkdir", return_value=None), \
          mock.patch.object(Path, "exists", return_value=True), \
          mock.patch.object(Path, "stat", return_value=mock.Mock(st_size=100)):

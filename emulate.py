@@ -54,22 +54,22 @@ def is_connected() -> bool:
     return any(len(parts := line.split()) >= 2 and parts[1] == "device" for line in lines)
 
 
-def capture(destination: str | Path, device_ready: bool = True) -> Path:
+def capture(destination: str | Path) -> Path:
     """Снять скриншот телефона и сохранить локально.
 
     Скриншот пишется прямо на устройство в /sdcard, потому что доступа
     к /data у обычного приложения нет, а потом забирается через adb pull.
     """
+    if not is_connected():
+        raise AdbError("Телефон не подключён")
+
     local = Path(destination)
     local.parent.mkdir(parents=True, exist_ok=True)
 
-    if device_ready:
-        adb("shell", "mkdir", "-p", DEVICE_DIR)
-        adb("shell", "screencap", "-p", DEVICE_FILE)
-        adb("pull", DEVICE_FILE, str(local))
-        adb("shell", "rm", "-f", DEVICE_FILE)
-    else:
-        raise AdbError("Телефон не подключён")
+    adb("shell", "mkdir", "-p", DEVICE_DIR)
+    adb("shell", "screencap", "-p", DEVICE_FILE)
+    adb("pull", DEVICE_FILE, str(local))
+    adb("shell", "rm", "-f", DEVICE_FILE)
 
     if not local.exists() or local.stat().st_size == 0:
         raise AdbError(f"Скриншот не получен: {local}")
