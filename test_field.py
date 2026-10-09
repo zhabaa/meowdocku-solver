@@ -76,6 +76,49 @@ def check(condition: bool, message: str) -> None:
         failures.append(message)
 
 
+def test_cross_is_not_a_cat() -> None:
+    """Белый крестик не должен читаться как котик.
+
+    Крестик оставляется одиночным тапом, и раньше он попадал в список
+    котиков: 53% его пикселей отличаются от цвета клетки, этого хватало
+    старому порогу. Различает их тёмная морда котика — у крестика нет ни
+    одного пикселя темнее 140.
+    """
+    board = read_board(str(SHOTS_DIR / "live_10x10_yellow_field.png"))
+
+    check(board.n == 10, f"поле {board.n}x{board.n}, ожидалось 10x10")
+    check(
+        board.cats == frozenset(),
+        f"крестик прочитан как котики {sorted(board.cats)}, поле должно быть пустым",
+    )
+
+    # Без крестика как котика поле не имеет решения, и это ломает проверку доски.
+    import main
+
+    problem = main.inspect_board(board)
+    check(problem is None, f"поле с крестиком не прошло проверку: {problem}")
+
+
+def test_cats_still_found_on_all_screens() -> None:
+    """Ужесточение детектора не должно потерять настоящих котиков."""
+    cases = {
+        "shot_3.jpg": {(5, 3), (7, 4)},
+        "shot_6.jpg": {(4, 3), (5, 5), (6, 0)},
+        "shot_8.jpg": {(0, 1)},
+        "live_9x9_cat_on_grey.png": {(7, 6)},
+        "live_10x10_one_cat.png": {(0, 4)},
+        "live_10x10_empty.png": set(),
+        "live_10x10_light.png": set(),
+    }
+
+    for name, expected in cases.items():
+        board = read_board(str(SHOTS_DIR / name))
+        check(
+            set(board.cats) == expected,
+            f"{name}: котики {sorted(board.cats)}, ожидалось {sorted(expected)}",
+        )
+
+
 def test_grey_cat_cell() -> None:
     """Котик с серой мордой не попадает в маску насыщенности.
 
@@ -244,6 +287,8 @@ def main() -> int:
     for test in (
         test_real_screens,
         test_live_screens,
+        test_cross_is_not_a_cat,
+        test_cats_still_found_on_all_screens,
         test_grey_cat_cell,
         test_synthetic_board,
         test_bad_input,

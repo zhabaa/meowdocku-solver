@@ -44,6 +44,11 @@ PALETTE_TOLERANCE = 50
 CAT_DEVIATION = 70
 # Доля «неправильных» пикселей внутри клетки, выше которой это котик.
 CAT_AREA_RATIO = 0.15
+# Крестик тоже отличается от цвета клетки, и от одного этого признака он не
+# отличается: 53% его пикселей белые. Различает котика тёмная морда — у
+# проверенных котиков 44-52% пикселей темнее этого порога, у крестика ноль.
+CAT_DARK_VALUE = 140
+CAT_DARK_RATIO = 0.15
 
 
 class BoardReadError(RuntimeError):
@@ -241,7 +246,13 @@ def _mode_color(pixels: np.ndarray) -> np.ndarray:
 
 
 def _has_cat(image: np.ndarray, box: tuple[int, int, int, int], color: np.ndarray) -> bool:
-    """Есть ли в клетке котик: много пикселей, отличных от цвета клетки."""
+    """Есть ли в клетке котик, а не крестик.
+
+    Два признака, оба нужны:
+      - много пикселей, отличных от цвета клетки: и у котика, и у крестика,
+      - много тёмных пикселей: у котика чёрно-белая морда, у крестика
+        только белые штрихи, и ни один его пиксель не темнее 140.
+    """
     x, y, w, h = box
     inner = image[
         y + int(h * 0.25) : y + int(h * 0.75),
@@ -252,7 +263,10 @@ def _has_cat(image: np.ndarray, box: tuple[int, int, int, int], color: np.ndarra
         return False
 
     deviation = np.abs(inner - color).sum(axis=1)
-    return float((deviation > CAT_DEVIATION).mean()) > CAT_AREA_RATIO
+    if float((deviation > CAT_DEVIATION).mean()) <= CAT_AREA_RATIO:
+        return False
+
+    return float((inner.max(axis=1) < CAT_DARK_VALUE).mean()) > CAT_DARK_RATIO
 
 
 def _build_palette(samples: dict[tuple[int, int], np.ndarray]) -> list[np.ndarray]:
