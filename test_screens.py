@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 
 from field import Board
-from screens import ScreenKind, detect, find_continue_hint, find_level_done_button
+from screens import ScreenClassifier, ScreenKind, detect
 
 SHOTS = Path(__file__).parent / "img" / "screenshots"
 
@@ -26,6 +26,8 @@ EXPECTED = {
 }
 
 failures: list[str] = []
+
+CLASSIFIER = ScreenClassifier()
 
 
 def check(condition: bool, message: str) -> None:
@@ -79,7 +81,7 @@ def test_button_not_confused_with_yellow_cells() -> None:
     image = cv2.imread(str(path))
 
     check(
-        find_level_done_button(image) is None,
+        CLASSIFIER.find_level_done_button(image) is None,
         "жёлтые клетки поля приняты за кнопку «уровень пройден»",
     )
 
@@ -95,7 +97,7 @@ def test_button_not_found_on_boards() -> None:
     for number in (3, 5, 6, 8):
         image = cv2.imread(str(SHOTS / f"shot_{number}.jpg"))
         check(
-            find_level_done_button(image) is None,
+            CLASSIFIER.find_level_done_button(image) is None,
             f"shot_{number}: на поле нашлась кнопка пройденного уровня",
         )
 
@@ -104,7 +106,7 @@ def test_button_found_on_both_done_screens() -> None:
     """Кнопка бывает и «Золотая рыбка», и «Уровень 334» — обе ищутся."""
     for number in (2, 7):
         image = cv2.imread(str(SHOTS / f"shot_{number}.jpg"))
-        point = find_level_done_button(image)
+        point = CLASSIFIER.find_level_done_button(image)
         check(point is not None, f"shot_{number}: кнопка не найдена")
         if point is None:
             continue
@@ -124,14 +126,14 @@ def test_hint_only_on_leaderboards() -> None:
     for number in (1, 4):
         image = cv2.imread(str(SHOTS / f"shot_{number}.jpg"))
         check(
-            find_continue_hint(image) is not None,
+            CLASSIFIER.find_continue_hint(image) is not None,
             f"shot_{number}: надпись не найдена",
         )
 
     for number in (3, 5, 6, 8):
         image = cv2.imread(str(SHOTS / f"shot_{number}.jpg"))
         check(
-            find_continue_hint(image) is None,
+            CLASSIFIER.find_continue_hint(image) is None,
             f"shot_{number}: на поле нашлась надпись для лидеров",
         )
 

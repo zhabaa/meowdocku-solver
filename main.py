@@ -114,13 +114,13 @@ def run_loop(dry_run: bool, max_levels: int, max_steps: int) -> int:
 
         elif screen.kind == ScreenKind.LEVEL_DONE:
             if not tap_until_changed(
-                screen.point, "кнопку «уровень пройден»", screen.kind, dry_run
+                screen.tap_point, "кнопку «уровень пройден»", screen.kind, dry_run
             ):
                 return 0
 
         elif screen.kind == ScreenKind.LEADERBOARD:
             if not tap_until_changed(
-                screen.point,
+                screen.tap_point,
                 "надпись «нажмите, чтобы продолжить»",
                 screen.kind,
                 dry_run,
@@ -323,9 +323,9 @@ def shoot(path: Path):
 
 def describe(screen) -> None:
     if screen.kind == ScreenKind.LEVEL_DONE:
-        print(f"Экран: уровень пройден, кнопка в {screen.point}")
+        print(f"Экран: уровень пройден, кнопка в {screen.tap_point}")
     elif screen.kind == ScreenKind.LEADERBOARD:
-        print(f"Экран: таблица лидеров, надпись в {screen.point}")
+        print(f"Экран: таблица лидеров, надпись в {screen.tap_point}")
 
 
 def run_on_image(path: Path) -> int:
@@ -337,11 +337,11 @@ def run_on_image(path: Path) -> int:
     screen = detect(path)
 
     if screen.kind == ScreenKind.LEADERBOARD:
-        print(f"Таблица лидеров. Тапнуть надпись в {screen.point}")
+        print(f"Таблица лидеров. Тапнуть надпись в {screen.tap_point}")
         return 0
 
     if screen.kind == ScreenKind.LEVEL_DONE:
-        print(f"Уровень пройден. Тапнуть кнопку в {screen.point}")
+        print(f"Уровень пройден. Тапнуть кнопку в {screen.tap_point}")
         return 0
 
     if screen.kind != ScreenKind.BOARD:

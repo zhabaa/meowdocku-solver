@@ -300,7 +300,7 @@ def test_retries_bad_board_frame() -> None:
 
     from screens import BoardScreen
 
-    tiny_screen = BoardScreen(kind="board", board=tiny)
+    tiny_screen = BoardScreen(board=tiny)
     real_shoot = main.shoot
     shoot_calls = {"n": 0}
 

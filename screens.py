@@ -10,147 +10,195 @@
 «Золотая рыбка», и «Уровень 334», но выглядит одинаково.
 """
 
-from dataclasses import dataclass
+from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional, Union
 
 import cv2
 import numpy as np
 
-from field import Board, BoardReadError, read_board
+from config import ScreenDetectionSettings, Settings
+from domain import ScreenKind
+from field import Board, BoardReadError, BoardReader
+from logging_setup import get_logger
 
-# Оранжевая кнопка: оттенок, насыщенность, яркость.
-BUTTON_HUE_LO, BUTTON_HUE_HI = 8, 22
-BUTTON_MIN_SAT, BUTTON_MIN_VAL = 150, 180
-BUTTON_MIN_AREA = 40000
-BUTTON_MIN_WIDTH_RATIO = 0.5
-BUTTON_MIN_CENTER_Y_RATIO = 0.6
-BUTTON_CLOSE_KERNEL = 25
-# Кнопка — плотный прямоугольник: залита почти целиком и сильно шире, чем
-# выше. Эти две проверки отсекают слипшиеся жёлтые клетки поля, которые
-# после морфологии тоже дают широкий блок в нижней половине, но залиты
-# меньше чем наполовину.
-BUTTON_MIN_FILL = 0.75
-BUTTON_MIN_ASPECT = 2.0
-
-# Жёлтая надпись на лидерах.
-HINT_HUE_LO, HINT_HUE_HI = 18, 32
-HINT_MIN_SAT, HINT_MIN_VAL = 120, 180
-HINT_MIN_WIDTH = 200
-HINT_SCAN_FROM_Y_RATIO = 0.75
-# Тап чуть ниже самой надписи: попадать в текст надёжнее, чем в пустое место.
-HINT_TAP_OFFSET_Y = 30
+log = get_logger("screens")
 
 
-class ScreenKind:
-    BOARD = "board"
-    LEVEL_DONE = "level_done"
-    LEADERBOARD = "leaderboard"
-    UNKNOWN = "unknown"
+class Screen(ABC):
+    """Что сейчас на экране."""
+
+    kind: ScreenKind
+
+    @property
+    def tap_point(self) -> tuple[int, int] | None:
+        """Куда тапать, чтобы продолжить. У поля и непонятного экрана — никуда."""
+        return None
+
+    def describe(self) -> str:
+        return str(self.kind)
 
 
-@dataclass(frozen=True)
-class BoardScreen:
-    kind: str
-    board: Board
+class BoardScreen(Screen):
+    """Игровое поле: видны цветные клетки."""
+
+    kind = ScreenKind.BOARD
+
+    def __init__(self, board: Board) -> None:
+        self.board = board
+
+    def describe(self) -> str:
+        return f"поле {self.board.n}x{self.board.n}"
 
 
-@dataclass(frozen=True)
-class TapScreen:
-    kind: str
-    point: tuple[int, int]
+class TapScreen(Screen):
+    """Служебный экран, с которого можно тапнуть и уйти дальше."""
+
+    def __init__(self, kind: ScreenKind, point: tuple[int, int], what: str) -> None:
+        self.kind = kind
+        self._point = point
+        self.what = what
+
+    @property
+    def tap_point(self) -> tuple[int, int]:
+        return self._point
+
+    def describe(self) -> str:
+        return f"{self.what}, тап в {self._point}"
 
 
-@dataclass(frozen=True)
-class UnknownScreen:
-    kind: str
-    reason: str
+class LevelDoneScreen(TapScreen):
+    """Экран «уровень пройден»."""
+
+    kind = ScreenKind.LEVEL_DONE
+
+    def __init__(self, point: tuple[int, int]) -> None:
+        super().__init__(ScreenKind.LEVEL_DONE, point, "уровень пройден")
 
 
-Screen = Union[BoardScreen, TapScreen, UnknownScreen]
+class LeaderboardScreen(TapScreen):
+    """Таблица лидеров с надписью «нажмите, чтобы продолжить»."""
+
+    kind = ScreenKind.LEADERBOARD
+
+    def __init__(self, point: tuple[int, int]) -> None:
+        super().__init__(ScreenKind.LEADERBOARD, point, "таблица лидеров")
 
 
-def _load(path: str | Path) -> np.ndarray:
-    image = cv2.imread(str(path))
-    if image is None:
-        raise FileNotFoundError(f"Не удалось открыть {path}")
-    return image
+class UnknownScreen(Screen):
+    """Ничего не узнали. Тапать сюда нельзя."""
+
+    kind = ScreenKind.UNKNOWN
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    def describe(self) -> str:
+        return f"не опознан: {self.reason}"
 
 
-def find_level_done_button(image: np.ndarray) -> Optional[tuple[int, int]]:
-    """Центр оранжевой кнопки в нижней половине экрана."""
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    mask = (
-        (hsv[:, :, 0] >= BUTTON_HUE_LO)
-        & (hsv[:, :, 0] <= BUTTON_HUE_HI)
-        & (hsv[:, :, 1] > BUTTON_MIN_SAT)
-        & (hsv[:, :, 2] > BUTTON_MIN_VAL)
-    ).astype(np.uint8)
+class ScreenClassifier:
+    """Отличает поле, служебные экраны и непонятное."""
 
-    kernel = np.ones((BUTTON_CLOSE_KERNEL, BUTTON_CLOSE_KERNEL), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    def __init__(self, settings: Settings | None = None, reader: BoardReader | None = None) -> None:
+        resolved = settings or Settings()
+        self.settings = resolved.screen
+        self.reader = reader or BoardReader(resolved)
 
-    count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
-    height, width = image.shape[:2]
+    def classify(self, path: str | Path) -> Screen:
+        """Определить, что на экране по файлу.
 
-    for i in range(1, count):
-        x, y, w, h, area = stats[i]
-        center_y = y + h // 2
+        Порядок важен: сначала кнопка, потом надпись, и только потом пробуем
+        читать поле. На экране пройденного уровня поле видно, но затемнено,
+        и читается оно не как поле — проверка кнопки срабатывает раньше.
+        """
+        image = self._load(path)
 
-        if area <= BUTTON_MIN_AREA:
-            continue
-        if w <= width * BUTTON_MIN_WIDTH_RATIO:
-            continue
-        if center_y <= height * BUTTON_MIN_CENTER_Y_RATIO:
-            continue
-        if area / float(w * h) < BUTTON_MIN_FILL:
-            continue
-        if w / float(h) < BUTTON_MIN_ASPECT:
-            continue
+        button = self.find_level_done_button(image)
+        if button is not None:
+            return LevelDoneScreen(button)
 
-        return (int(x + w // 2), int(center_y))
+        hint = self.find_continue_hint(image)
+        if hint is not None:
+            return LeaderboardScreen(hint)
 
-    return None
+        try:
+            board = self.reader.read(image)
+        except BoardReadError as error:
+            log.debug("поле не прочиталось: %s", error)
+            return UnknownScreen(str(error))
 
+        return BoardScreen(board)
 
-def find_continue_hint(image: np.ndarray) -> Optional[tuple[int, int]]:
-    """Точка тапа по жёлтой надписи «Нажмите, чтобы продолжить»."""
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    mask = (
-        (hsv[:, :, 0] >= HINT_HUE_LO)
-        & (hsv[:, :, 0] <= HINT_HUE_HI)
-        & (hsv[:, :, 1] > HINT_MIN_SAT)
-        & (hsv[:, :, 2] > HINT_MIN_VAL)
-    ).astype(np.uint8)
+    def find_level_done_button(self, image: np.ndarray) -> tuple[int, int] | None:
+        """Центр оранжевой кнопки в нижней половине экрана."""
+        mask = self._orange_mask(image)
+        mask = cv2.morphologyEx(
+            mask,
+            cv2.MORPH_CLOSE,
+            np.ones((self.settings.button_close_kernel,) * 2, np.uint8),
+        )
 
-    for y in range(int(image.shape[0] * HINT_SCAN_FROM_Y_RATIO), image.shape[0]):
-        xs = np.where(mask[y] > 0)[0]
-        if len(xs) > HINT_MIN_WIDTH:
-            return (int((xs.min() + xs.max()) // 2), int(y + HINT_TAP_OFFSET_Y))
+        count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
+        height, width = image.shape[:2]
 
-    return None
+        for index in range(1, count):
+            left, top, button_width, button_height, area = stats[index]
+            center_y = top + button_height // 2
+
+            if area <= self.settings.button_min_area:
+                continue
+            if button_width <= width * self.settings.button_min_width_ratio:
+                continue
+            if center_y <= height * self.settings.button_min_center_y_ratio:
+                continue
+            # Кнопка — плотный прямоугольник: залита почти целиком и сильно
+            # шире, чем выше. Эти две проверки отсекают слипшиеся жёлтые
+            # клетки поля: они дают широкий блок в нижней половине, но
+            # залиты меньше чем наполовину.
+            if area / float(button_width * button_height) < self.settings.button_min_fill:
+                continue
+            if button_width / float(button_height) < self.settings.button_min_aspect:
+                continue
+
+            return (int(left + button_width // 2), int(center_y))
+
+        return None
+
+    def find_continue_hint(self, image: np.ndarray) -> tuple[int, int] | None:
+        """Точка тапа по жёлтой надписи «нажмите, чтобы продолжить»."""
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        mask = (
+            (hsv[:, :, 0] >= self.settings.hint_hue_min)
+            & (hsv[:, :, 0] <= self.settings.hint_hue_max)
+            & (hsv[:, :, 1] > self.settings.hint_min_saturation)
+            & (hsv[:, :, 2] > self.settings.hint_min_value)
+        ).astype(np.uint8)
+
+        for y in range(int(image.shape[0] * self.settings.hint_scan_from_y_ratio), image.shape[0]):
+            xs = np.where(mask[y] > 0)[0]
+            if len(xs) > self.settings.hint_min_width:
+                center = (int((xs.min() + xs.max()) // 2), int(y + self.settings.hint_tap_offset_y))
+                return center
+
+        return None
+
+    def _orange_mask(self, image: np.ndarray) -> np.ndarray:
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        return (
+            (hsv[:, :, 0] >= self.settings.button_hue_min)
+            & (hsv[:, :, 0] <= self.settings.button_hue_max)
+            & (hsv[:, :, 1] > self.settings.button_min_saturation)
+            & (hsv[:, :, 2] > self.settings.button_min_value)
+        ).astype(np.uint8)
+
+    @staticmethod
+    def _load(path: str | Path) -> np.ndarray:
+        image = cv2.imread(str(path))
+        if image is None:
+            raise FileNotFoundError(f"не удалось открыть {path}")
+        return image
 
 
 def detect(path: str | Path) -> Screen:
-    """Определить, что на экране.
-
-    Порядок важен: сначала ищем кнопку, потом надпись, и только потом пробуем
-    читать поле. На экране пройденного уровня поле видно, но затемнено, и
-    читается оно не как поле — проверка кнопки срабатывает раньше.
-    """
-    image = _load(path)
-
-    button = find_level_done_button(image)
-    if button is not None:
-        return TapScreen(kind=ScreenKind.LEVEL_DONE, point=button)
-
-    hint = find_continue_hint(image)
-    if hint is not None:
-        return TapScreen(kind=ScreenKind.LEADERBOARD, point=hint)
-
-    try:
-        board = read_board(str(path))
-    except BoardReadError as error:
-        return UnknownScreen(kind=ScreenKind.UNKNOWN, reason=str(error))
-
-    return BoardScreen(kind=ScreenKind.BOARD, board=board)
+    """Определить экран — короткий вызов для скриптов и тестов."""
+    return ScreenClassifier().classify(path)
