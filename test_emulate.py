@@ -9,13 +9,10 @@ from pathlib import Path
 from unittest import mock
 
 import emulate
+from config import DeviceSettings, Settings, TimingSettings
+from emulate import AdbDevice, AdbError
 
 failures: list[str] = []
-
-
-def check(condition: bool, message: str) -> None:
-    if not condition:
-        failures.append(message)
 
 
 class FakeResult:
@@ -25,10 +22,25 @@ class FakeResult:
         self.returncode = returncode
 
 
+def check(condition: bool, message: str) -> None:
+    if not condition:
+        failures.append(message)
+
+
+def make_device(**overrides) -> AdbDevice:
+    settings = Settings()
+    return AdbDevice(
+        device=overrides.get("device", DeviceSettings()),
+        timing=overrides.get("timing", TimingSettings()),
+    )
+
+
 def test_double_tap_is_one_command() -> None:
     """Двойной тап обязан уйти одной командой, иначе между тапами вылезает adb."""
+    device = make_device()
+
     with mock.patch.object(emulate.subprocess, "run", return_value=FakeResult()) as run:
-        emulate.double_tap(100.4, 200.9)
+        device.double_tap(100.4, 200.9)
 
     check(run.call_count == 1, f"ожидался 1 вызов adb, было {run.call_count}")
 
@@ -49,49 +61,42 @@ def test_double_tap_is_one_command() -> None:
 
 
 def test_capture_writes_to_device_then_pulls() -> None:
+    device = make_device()
+
     with mock.patch.object(emulate.subprocess, "run", return_value=FakeResult()) as run, \
-         mock.patch.object(emulate, "is_connected", return_value=True), \
+         mock.patch.object(device, "is_connected", return_value=True), \
          mock.patch.object(Path, "mkdir", return_value=None), \
          mock.patch.object(Path, "exists", return_value=True), \
          mock.patch.object(Path, "stat", return_value=mock.Mock(st_size=100)):
-        emulate.capture("out/screen.png")
+        device.capture("out/screen.png")
 
     commands = [call[0][0] for call in run.call_args_list]
 
-    check(
-        any("screencap" in c for c in commands),
-        f"screencap не вызван: {commands}",
-    )
-    check(
-        any("pull" in c for c in commands),
-        f"pull не вызван: {commands}",
-    )
-    check(
-        any("mkdir" in c for c in commands),
-        f"папка на устройстве не создана: {commands}",
-    )
-    check(
-        any("rm" in c for c in commands),
-        f"временный файл на устройстве не убран: {commands}",
-    )
+    check(any("screencap" in c for c in commands), f"screencap не вызван: {commands}")
+    check(any("pull" in c for c in commands), f"pull не вызван: {commands}")
+    check(any("mkdir" in c for c in commands), f"папка на устройстве не создана: {commands}")
+    check(any("rm" in c for c in commands), f"временный файл не убран: {commands}")
 
 
 def test_capture_without_device_raises() -> None:
-    with mock.patch.object(emulate, "is_connected", return_value=False):
+    device = make_device()
+    with mock.patch.object(device, "is_connected", return_value=False):
         try:
-            emulate.capture("out/screen.png")
+            device.capture("out/screen.png")
             failures.append("без телефона ожидалась ошибка")
-        except emulate.AdbError:
+        except AdbError:
             pass
 
 
 def test_adb_error_is_reported() -> None:
+    device = make_device()
     failing = FakeResult(stderr="device offline", returncode=1)
+
     with mock.patch.object(emulate.subprocess, "run", return_value=failing):
         try:
-            emulate.adb("shell", "true")
+            device.adb("shell", "true")
             failures.append("ошибка adb не поднята")
-        except emulate.AdbError as error:
+        except AdbError as error:
             check("device offline" in str(error), f"в тексте ошибки нет вывода adb: {error}")
 
 
@@ -104,22 +109,42 @@ def test_is_connected() -> None:
     ]
 
     for output, expected in outputs:
+        device = make_device()
         with mock.patch.object(emulate.shutil, "which", return_value="/usr/bin/adb"), \
              mock.patch.object(emulate.subprocess, "run", return_value=FakeResult(output)):
             check(
-                emulate.is_connected() == expected,
+                device.is_connected() == expected,
                 f"вывод {output!r}: ожидалось {expected}",
             )
 
 
 def test_wait_for_device_gives_up() -> None:
-    with mock.patch.object(emulate, "is_connected", return_value=False), \
+    device = make_device()
+    with mock.patch.object(device, "is_connected", return_value=False), \
          mock.patch.object(emulate.time, "sleep"):
         try:
-            emulate.wait_for_device(timeout=0.05)
+            device.wait_for_device(timeout=0.05)
             failures.append("ожидалась ошибка ожидания устройства")
-        except emulate.AdbError:
+        except AdbError:
             pass
+
+
+def test_paths_from_settings() -> None:
+    """Пути на устройстве берутся из настроек, а не зашиты в код."""
+    device = make_device(device=DeviceSettings(device_dir="/sdcard/other", device_file="/sdcard/other/a.png"))
+
+    with mock.patch.object(emulate.subprocess, "run", return_value=FakeResult()) as run, \
+         mock.patch.object(device, "is_connected", return_value=True), \
+         mock.patch.object(Path, "mkdir", return_value=None), \
+         mock.patch.object(Path, "exists", return_value=True), \
+         mock.patch.object(Path, "stat", return_value=mock.Mock(st_size=10)):
+        device.capture("out/screen.png")
+
+    commands = [call[0][0] for call in run.call_args_list]
+    check(
+        any("/sdcard/other" in " ".join(c) for c in commands),
+        f"путь из настроек не использован: {commands}",
+    )
 
 
 def main() -> int:
@@ -130,6 +155,7 @@ def main() -> int:
         test_adb_error_is_reported,
         test_is_connected,
         test_wait_for_device_gives_up,
+        test_paths_from_settings,
     ):
         test()
         print(f"{test.__name__}: выполнен")
