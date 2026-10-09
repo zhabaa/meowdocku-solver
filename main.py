@@ -86,6 +86,13 @@ def run_loop(dry_run: bool, max_levels: int, max_steps: int) -> int:
                 print("\n--dry-run: телефон не трогаем.")
                 return 0
 
+            # Поле остаётся на экране ещё на пару секунд, пока игра
+            # доигрывает анимацию. Без ожидания бот перечитывает то же
+            # поле и считает его новым уровнем.
+            if not wait_for_change(ScreenKind.BOARD):
+                print("Поле не сменилось после постановки кошек.")
+                return 0
+
             levels_done += 1
             print(f"Уровень пройден. Всего: {levels_done}")
 

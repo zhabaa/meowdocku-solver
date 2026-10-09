@@ -177,6 +177,45 @@ def test_repeats_double_tap_when_cat_missing() -> None:
     check(set(repeats) == {first}, f"повтор ушёл в другую клетку: {set(repeats)}")
 
 
+def test_level_counted_once() -> None:
+    """Уровень не должен засчитываться дважды на одном и том же поле.
+
+    Игра держит поле на экране ещё пару секунд после последнего котика.
+    Без ожидания бот перечитывает то же поле и считает его новым уровнем.
+    """
+    phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
+
+    with running(phone, max_levels=1, max_steps=10):
+        pass
+
+    # Один уровень = ровно N двойных тапов, а не два прохода по полю.
+    check(
+        len(phone.double_taps) == 8,
+        f"двойных тапов {len(phone.double_taps)}, ожидалось 8: "
+        "похоже, уровень посчитан дважды",
+    )
+
+
+def test_waits_for_board_to_change() -> None:
+    """После последнего котика бот ждёт, пока поле уйдёт с экрана."""
+    phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
+    board = read_board(str(SHOTS / "shot_5.jpg"))
+
+    # После того как все котики поставлены, поле остаётся на экране:
+    # подделка не переключается сама, как и игра.
+    for row, col in solve_from_board(board):
+        phone.double_tap(*board.tap_point(row, col))
+
+    with running(phone, max_levels=1, max_steps=5):
+        pass
+
+    check(
+        len(phone.double_taps) == 8,
+        f"после готового поля двойных тапов {len(phone.double_taps)}, "
+        "бот продолжал тапать вместо ожидания",
+    )
+
+
 def test_stops_on_ambiguous_board() -> None:
     phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
     from unittest import mock
@@ -236,6 +275,8 @@ def main_run() -> int:
         test_repeated_tap_when_screen_unchanged,
         test_stopped_when_screen_never_changes,
         test_repeats_double_tap_when_cat_missing,
+        test_level_counted_once,
+        test_waits_for_board_to_change,
         test_stops_on_ambiguous_board,
         test_stops_on_unknown_screen,
         test_dry_run_never_taps,
