@@ -143,8 +143,8 @@ class FakePhone:
         """Ближайшая клетка к точке тапа, если тап вообще попал в поле."""
         centers = [
             (board.tap_point(row, col), Cell(row, col))
-            for row in range(board.n)
-            for col in range(board.n)
+            for row in range(board.size)
+            for col in range(board.size)
         ]
         best_point, best_cell = min(
             centers, key=lambda item: (item[0][0] - x) ** 2 + (item[0][1] - y) ** 2
@@ -157,7 +157,7 @@ class FakePhone:
         return best_cell
 
     def _draw_cat(self, board, cell: Cell) -> None:
-        cx, cy = board.centers[cell.row * board.n + cell.col]
+        cx, cy = board.centers[cell.row * board.size + cell.col]
         x = int(cx - board.cell_w / 2)
         y = int(cy - board.cell_h / 2)
         w, h = board.cell_w, board.cell_h

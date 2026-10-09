@@ -72,7 +72,7 @@ def test_matches_brute_force_on_real_screens() -> None:
             solution.cats == found[0],
             f"{name}: солвер дал {solution}, перебор дал {found[0]}",
         )
-        check(len(solution) == board.n, f"{name}: котиков {len(solution)}, ожидалось {board.n}")
+        check(len(solution) == board.size, f"{name}: котиков {len(solution)}, ожидалось {board.size}")
 
 
 def test_matches_brute_force_on_live_screens() -> None:
@@ -107,8 +107,8 @@ def test_known_cats_do_not_change_answer() -> None:
     # Подсовываем заведомо чужую клетку: солвер обязан споткнуться.
     wrong = next(
         Cell(row, col)
-        for row in range(board.n)
-        for col in range(board.n)
+        for row in range(board.size)
+        for col in range(board.size)
         if (Cell(row, col) not in solution and (row, col) not in board.cats)
     )
     try:
@@ -126,8 +126,8 @@ def test_contradictory_found_cats() -> None:
     letter = board.colors[0][0]
     same_color = [
         Cell(row, col)
-        for row in range(board.n)
-        for col in range(board.n)
+        for row in range(board.size)
+        for col in range(board.size)
         if board.colors[row][col] == letter
     ]
     try:
@@ -138,7 +138,7 @@ def test_contradictory_found_cats() -> None:
 
     # Котик вне поля.
     try:
-        solver.solve(board.colors, [Cell(board.n, 0)])
+        solver.solve(board.colors, [Cell(board.size, 0)])
         failures.append("котик вне поля принят")
     except UniqueSolutionRequired:
         pass
@@ -204,10 +204,10 @@ def test_solution_respects_rules() -> None:
         board = read_board(str(IMG_DIR / f"{name}.png"))
         solution = solver.solve(board.colors, board.cats)
 
-        check(len({cat.row for cat in solution}) == board.n, f"{name}: не по одной кошке на строку")
-        check(len({cat.col for cat in solution}) == board.n, f"{name}: не по одной кошке на столбец")
+        check(len({cat.row for cat in solution}) == board.size, f"{name}: не по одной кошке на строку")
+        check(len({cat.col for cat in solution}) == board.size, f"{name}: не по одной кошке на столбец")
         check(
-            len({board.colors[cat.row][cat.col] for cat in solution}) == board.n,
+            len({board.colors[cat.row][cat.col] for cat in solution}) == board.size,
             f"{name}: не по одной кошке на цвет",
         )
 

@@ -74,7 +74,7 @@ def run(phone: FakePhone, max_levels: int = 1, max_steps: int = 40, dry_run: boo
 def tiny_board(size: int = 1) -> Board:
     """Поле, которое читается как доска, но доской не является."""
     return Board(
-        n=size,
+        size=size,
         colors=(("A",),) * size,
         cats=frozenset((0, 0)) if size == 1 else frozenset(),
         centers=tuple((0.0, 0.0) for _ in range(size * size)),
@@ -191,7 +191,7 @@ def test_too_many_cats_rejected() -> None:
     """Экран «уровень пройден» подсветкой поверх поля даёт лишних котиков."""
     phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
     board = Board(
-        n=10,
+        size=10,
         colors=tuple(tuple("ABCDEFGHIJ" for _ in range(10)) for _ in range(10)),
         cats=frozenset((row, col) for row in range(10) for col in range(10)),
         centers=tuple((0.0, 0.0) for _ in range(100)),

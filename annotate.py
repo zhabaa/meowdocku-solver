@@ -47,10 +47,10 @@ class Annotator:
         font_scale = max(0.4, cell_size * 0.004)
         planned_cells = set(planned)
 
-        for row in range(board.n):
-            for col in range(board.n):
+        for row in range(board.size):
+            for col in range(board.size):
                 cell = Cell(row, col)
-                center_x, center_y = board.centers[row * board.n + col]
+                center_x, center_y = board.centers[row * board.size + col]
                 half = cell_size * 0.42
 
                 if (row, col) in board.cats:
@@ -105,7 +105,7 @@ class Annotator:
     @staticmethod
     def _cell_size(board: Board) -> float:
         """Шаг сетки: расстояние между центрами соседних клеток."""
-        if board.n < 2:
+        if board.size < 2:
             return float(min(board.cell_w, board.cell_h))
         return float(board.centers[1][0] - board.centers[0][0])
 

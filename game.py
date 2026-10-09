@@ -44,7 +44,7 @@ class BoardValidator:
 
     def problem_with(self, board: Board) -> Optional[str]:
         """Причина, по которой доска не годится. None — доска в порядке."""
-        size = board.n
+        size = board.size
 
         # На живой игре поля от 4x4 и до 20x20. Кадры переходов иногда
         # читаются как поле 1x1 — это ореол вокруг иконки, а не доска.
@@ -98,7 +98,7 @@ class LevelPlayer:
 
     def play(self, board: Board, dry_run: bool) -> bool:
         """Разобрать поле и поставить кошек. False — продолжать нельзя."""
-        log.info("поле %dx%d, найдено котиков: %d", board.n, board.n, len(board.cats))
+        log.info("поле %dx%d, найдено котиков: %d", board.size, board.size, len(board.cats))
 
         try:
             solution = self.solver.solve(board.colors, [Cell(r, c) for r, c in board.cats])

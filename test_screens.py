@@ -51,7 +51,7 @@ def test_board_screens_are_readable() -> None:
         if screen.kind != ScreenKind.BOARD:
             failures.append(f"shot_{number}: ожидалось поле, а получено {screen.kind}")
             continue
-        check(screen.board.n == n, f"shot_{number}: N = {screen.board.n}, ожидалось {n}")
+        check(screen.board.size == n, f"shot_{number}: N = {screen.board.size}, ожидалось {n}")
 
 
 def test_cats_match_manual_look() -> None:

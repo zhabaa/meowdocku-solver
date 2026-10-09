@@ -87,7 +87,7 @@ def test_cross_is_not_a_cat() -> None:
     """
     board = read_board(str(SHOTS_DIR / "live_10x10_yellow_field.png"))
 
-    check(board.n == 10, f"поле {board.n}x{board.n}, ожидалось 10x10")
+    check(board.size == 10, f"поле {board.size}x{board.size}, ожидалось 10x10")
     check(
         board.cats == frozenset(),
         f"крестик прочитан как котики {sorted(board.cats)}, поле должно быть пустым",
@@ -128,7 +128,7 @@ def test_grey_cat_cell() -> None:
     path = SHOTS_DIR / "live_9x9_cat_on_grey.png"
     board = read_board(str(path))
 
-    check(board.n == 9, f"поле {board.n}x{board.n}, ожидалось 9x9")
+    check(board.size == 9, f"поле {board.size}x{board.size}, ожидалось 9x9")
     check(
         set(board.cats) == {(7, 6)},
         f"котики {sorted(board.cats)}, ожидался только (7,6)",
@@ -152,11 +152,11 @@ def test_live_screens() -> None:
     with_cat = SHOTS_DIR / "live_10x10_one_cat.png"
 
     board = read_board(str(empty))
-    check(board.n == 10, f"поле {board.n}x{board.n}, ожидалось 10x10")
+    check(board.size == 10, f"поле {board.size}x{board.size}, ожидалось 10x10")
     check(board.cats == frozenset(), f"на пустом поле котики {sorted(board.cats)}")
 
     board = read_board(str(with_cat))
-    check(board.n == 10, f"поле {board.n}x{board.n} после тапа, ожидалось 10x10")
+    check(board.size == 10, f"поле {board.size}x{board.size} после тапа, ожидалось 10x10")
     check(
         set(board.cats) == {(0, 4)},
         f"после тапа котики {sorted(board.cats)}, ожидался только (0,4)",
@@ -186,7 +186,7 @@ def test_real_screens() -> None:
 
         board = read_board(str(path))
 
-        check(board.n == n, f"{name}: N = {board.n}, ожидалось {n}")
+        check(board.size == n, f"{name}: N = {board.size}, ожидалось {n}")
         check(
             set(board.cats) == cats,
             f"{name}: котики {sorted(board.cats)}, ожидалось {sorted(cats)}",
@@ -249,7 +249,7 @@ def test_synthetic_board() -> None:
 
     try:
         board = read_board(str(path))
-        check(board.n == n, f"синтетика: N = {board.n}, ожидалось {n}")
+        check(board.size == n, f"синтетика: N = {board.size}, ожидалось {n}")
         check(
             len(board.palette) == n,
             f"синтетика: в палитре {len(board.palette)} цветов, ожидалось {n}",

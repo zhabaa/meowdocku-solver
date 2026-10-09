@@ -47,7 +47,7 @@ class BoardScreen(Screen):
         self.board = board
 
     def describe(self) -> str:
-        return f"поле {self.board.n}x{self.board.n}"
+        return f"поле {self.board.size}x{self.board.size}"
 
 
 class TapScreen(Screen):

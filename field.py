@@ -32,7 +32,7 @@ class BoardReadError(RuntimeError):
 class Board:
     """Прочитанное поле: цвета, найденные котики и точки тапа."""
 
-    n: int
+    size: int
     colors: tuple[tuple[str, ...], ...]
     cats: frozenset[tuple[int, int]]
     centers: tuple[tuple[float, float], ...]
@@ -45,19 +45,19 @@ class Board:
         return self.colors[row][col]
 
     def tap_point(self, row: int, col: int) -> tuple[float, float]:
-        return self.tap_points[row * self.n + col]
+        return self.tap_points[row * self.size + col]
 
     def __str__(self) -> str:
-        lines = [f"N = {self.n}, котов найдено: {len(self.cats)}", ""]
-        lines.append("   " + " ".join(f"{letter:>2}" for letter in "ABCDEFGHIJKLMNOP"[: self.n]))
-        for row in range(self.n):
+        lines = [f"N = {self.size}, котов найдено: {len(self.cats)}", ""]
+        lines.append("   " + " ".join(f"{letter:>2}" for letter in "ABCDEFGHIJKLMNOP"[: self.size]))
+        for row in range(self.size):
             mark = ""
             if self.cats:
                 mark = "   котики: " + ", ".join(
                     f"({r},{c})" for r, c in sorted(self.cats) if r == row
                 )
             lines.append(
-                f"{row:>2} " + " ".join(f"{self.colors[row][c]:>2}" for c in range(self.n)) + mark
+                f"{row:>2} " + " ".join(f"{self.colors[row][c]:>2}" for c in range(self.size)) + mark
             )
         return "\n".join(lines)
 
@@ -366,7 +366,7 @@ class BoardReader:
         centers, tap_points, cell_width, cell_height = self._geometry(size, cells)
 
         return Board(
-            n=size,
+            size=size,
             colors=colors,
             cats=frozenset((cell.row, cell.col) for cell in cats),
             centers=centers,
