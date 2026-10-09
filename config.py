@@ -12,8 +12,12 @@ MEOWDOKU_, например:
 
 import os
 from dataclasses import dataclass, fields, replace
+from pathlib import Path
 
 ENV_PREFIX = "MEOWDOKU_"
+
+# Лог по умолчанию. В .gitignore, он большой и не нужен в репозитории.
+DEFAULT_LOG_FILE = Path("img/tmp/bot.log")
 
 
 @dataclass(frozen=True)

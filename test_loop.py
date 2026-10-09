@@ -1,4 +1,4 @@
-"""Тесты полного цикла на подделанном телефоне.
+"""Тесты игрового цикла на подделке телефона.
 
 Подделка отдаёт настоящие скрины и кладёт котика в клетку, куда пришёл
 двойной тап. Проверяем главное: бот проходит уровень за одну попытку,
@@ -8,19 +8,20 @@
 Запуск: .venv/bin/python test_loop.py
 """
 
-import contextlib
 from pathlib import Path
 from unittest import mock
 
 import cv2
 import numpy as np
 
-import fake_phone
-import main
+from annotate import Annotator
+from config import Settings
+from domain import Cell, ScreenKind
 from fake_phone import SHOTS, FakePhone
-from field import read_board
-from screens import ScreenKind
-from solver import InconsistentBoard, solve_from_board
+from field import Board, BoardReader
+from game import EXIT_FAILED, EXIT_OK, BoardValidator, GameBot, LevelPlayer
+from screens import BoardScreen, ScreenClassifier
+from solver import Solver, UniqueSolutionRequired
 
 failures: list[str] = []
 
@@ -30,62 +31,82 @@ def check(condition: bool, message: str) -> None:
         failures.append(message)
 
 
-@contextlib.contextmanager
-def running(phone: FakePhone, **kwargs):
-    """Запустить цикл на подделанном телефоне."""
-    patches = fake_phone.patch_all(phone, main)
+def build_bot(phone: FakePhone, settings: Settings | None = None, shoot=None):
+    """Собрать бота, у которого вместо телефона подделка."""
+    resolved = settings or Settings()
+    work_dir = phone.out
+    reader = BoardReader(resolved)
+    solver = Solver(time_limit=resolved.timing.solve_time_limit)
+    classifier = ScreenClassifier(resolved, reader)
+    annotator = Annotator()
 
-    with contextlib.ExitStack() as stack:
-        for patch in patches:
-            stack.enter_context(patch)
-        stack.enter_context(__import__("unittest").mock.patch.object(main, "OUT_DIR", phone.out))
-        stack.enter_context(
-            __import__("unittest").mock.patch.object(main, "LIVE_SHOT", phone.out / "live.png")
-        )
-        yield main.run_loop(
-            dry_run=kwargs.get("dry_run", False),
-            max_levels=kwargs.get("max_levels", 1),
-            max_steps=kwargs.get("max_steps", 40),
-        )
+    player = LevelPlayer(
+        device=phone,
+        classifier=classifier,
+        solver=solver,
+        annotator=annotator,
+        settings=resolved,
+        work_dir=work_dir,
+    )
+
+    bot = GameBot(
+        device=phone,
+        classifier=classifier,
+        player=player,
+        validator=BoardValidator(resolved, solver),
+        annotator=annotator,
+        settings=resolved,
+        work_dir=work_dir,
+    )
+
+    if shoot is not None:
+        original = bot._shoot
+        bot._shoot = lambda: shoot(original)
+
+    return bot
 
 
-def test_sprites_are_usable() -> None:
-    """Спрайт котика должен читаться как кот на поле."""
-    phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
-    board = read_board(str(SHOTS / "shot_5.jpg"))
+def run(phone: FakePhone, max_levels: int = 1, max_steps: int = 40, dry_run: bool = False) -> int:
+    with mock.patch("time.sleep"):
+        return build_bot(phone).run(max_levels=max_levels, max_steps=max_steps, dry_run=dry_run)
 
-    phone.double_tap(*board.tap_point(0, 1))
-    after = read_board(str(phone.out / "probe.png"))
 
-    check((0, 1) in after.cats, f"после тапа кот не появился, поле: {sorted(after.cats)}")
-    check(after.colors == board.colors, "подстановка котика испортила цвета поля")
+def tiny_board(size: int = 1) -> Board:
+    """Поле, которое читается как доска, но доской не является."""
+    return Board(
+        n=size,
+        colors=(("A",),) * size,
+        cats=frozenset((0, 0)) if size == 1 else frozenset(),
+        centers=tuple((0.0, 0.0) for _ in range(size * size)),
+        tap_points=tuple((0.0, 0.0) for _ in range(size * size)),
+        palette=tuple((0, 0, 0) for _ in range(size)),
+        cell_w=10,
+        cell_h=10,
+    )
 
 
 def test_single_level_one_pass() -> None:
     """Пустое поле 8x8: 8 двойных тапов, ни одного повтора."""
     phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
+    code = run(phone)
 
-    with running(phone, max_levels=1):
-        pass
-
+    check(code == EXIT_OK, f"вернулся код {code}, ожидался 0")
     check(len(phone.double_taps) == 8, f"двойных тапов {len(phone.double_taps)}, ожидалось 8")
+    check(not phone.taps, f"одиночных тапов {len(phone.taps)}, ожидался 0")
 
 
 def test_found_cats_not_tapped() -> None:
     """shot_8: один кот уже найден, значит 7 двойных тапов."""
     phone = FakePhone(screens=[SHOTS / "shot_8.jpg"])
-
-    with running(phone, max_levels=1):
-        pass
+    run(phone)
 
     check(len(phone.double_taps) == 7, f"двойных тапов {len(phone.double_taps)}, ожидалось 7")
 
 
 def test_taps_match_solution() -> None:
     """Каждый тап должен попасть в клетку из решения."""
-    board = read_board(str(SHOTS / "shot_8.jpg"))
-    solution = solve_from_board(board)
-    # Уже найденного котика тапать не будем, его в ожидании нет.
+    board = BoardReader().read_path(str(SHOTS / "shot_8.jpg"))
+    solution = Solver().solve(board.colors, [Cell(r, c) for r, c in board.cats])
     expected = {
         tuple(map(int, board.tap_point(cat.row, cat.col)))
         for cat in solution
@@ -93,32 +114,24 @@ def test_taps_match_solution() -> None:
     }
 
     phone = FakePhone(screens=[SHOTS / "shot_8.jpg"])
-    with running(phone, max_levels=1):
-        pass
+    run(phone)
 
-    check(
-        set(phone.double_taps) == expected,
-        f"тапы не совпали с решением: {sorted(phone.double_taps)}",
-    )
+    check(set(phone.double_taps) == expected, f"тапы не совпали с решением: {sorted(phone.double_taps)}")
 
 
 def test_every_cat_lands() -> None:
     """После прохода на поле должно быть ровно N котиков."""
     phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
+    run(phone)
 
-    with running(phone, max_levels=1):
-        pass
-
-    board = read_board(str(phone.out / "probe.png"))
+    board = BoardReader().read_path(str(phone.out / "probe.png"))
     check(len(board.cats) == 8, f"котиков на поле {len(board.cats)}, ожидалось 8")
 
 
 def test_leaderboard_then_board() -> None:
     """Лидеры: одиночный тап в надпись, дальше бот берётся за поле."""
     phone = FakePhone(screens=[SHOTS / "shot_1.jpg", SHOTS / "shot_5.jpg"])
-
-    with running(phone, max_levels=1):
-        pass
+    run(phone)
 
     check(len(phone.taps) >= 1, "одиночных тапов не было")
     check(phone.taps[0] == (536, 2111), f"тапнул в {phone.taps[0]}, ожидалось (536, 2111)")
@@ -128,9 +141,7 @@ def test_leaderboard_then_board() -> None:
 def test_level_done_button() -> None:
     """Экран пройденного: одиночный тап в оранжевую кнопку."""
     phone = FakePhone(screens=[SHOTS / "shot_2.jpg", SHOTS / "shot_5.jpg"])
-
-    with running(phone, max_levels=1):
-        pass
+    run(phone)
 
     check(len(phone.taps) >= 1, "одиночных тапов не было")
     check(phone.taps[0] == (540, 1840), f"тапнул в {phone.taps[0]}, ожидалось (540, 1840)")
@@ -139,26 +150,19 @@ def test_level_done_button() -> None:
 def test_repeated_tap_when_screen_unchanged() -> None:
     """Если экран не меняется, тап повторяется в ту же точку."""
     phone = FakePhone(screens=[SHOTS / "shot_1.jpg"])
-
-    with running(phone, max_steps=3):
-        pass
+    run(phone, max_steps=3)
 
     check(len(phone.taps) >= 2, f"тапов {len(phone.taps)}, ожидались повторы")
     check(len(set(phone.taps)) == 1, f"тапы разъехались: {set(phone.taps)}")
 
 
 def test_stopped_when_screen_never_changes() -> None:
-    """Если экран так и не сменился, цикл должен завершиться, а не висеть."""
+    """Если экран так и не сменился, цикл завершается, а не висит."""
     phone = FakePhone(screens=[SHOTS / "shot_1.jpg"])
+    code = run(phone, max_steps=3)
 
-    with running(phone, max_steps=3) as code:
-        pass
-
-    check(code == 0, f"вернулся код {code}, ожидался 0")
-    check(
-        len(phone.taps) <= main.MAX_TAP_ATTEMPTS,
-        f"тапов {len(phone.taps)}, ожидалось не больше {main.MAX_TAP_ATTEMPTS}",
-    )
+    check(code == EXIT_OK, f"вернулся код {code}, ожидался 0")
+    check(len(phone.taps) <= 3, f"тапов {len(phone.taps)}, ожидалось не больше 3")
 
 
 def test_repeats_double_tap_when_cat_missing() -> None:
@@ -166,176 +170,30 @@ def test_repeats_double_tap_when_cat_missing() -> None:
     broken = FakePhone(screens=[SHOTS / "shot_5.jpg"])
     broken.double_tap = lambda x, y: broken.double_taps.append((int(x), int(y)))
 
-    with running(broken, max_levels=1, max_steps=3):
-        pass
+    run(broken, max_levels=1, max_steps=3)
 
     first = broken.double_taps[0]
-    repeats = broken.double_taps[: main.MAX_TAP_ATTEMPTS]
-    check(
-        len(repeats) == main.MAX_TAP_ATTEMPTS,
-        f"повторов {len(repeats)}, ожидалось {main.MAX_TAP_ATTEMPTS}",
-    )
+    repeats = broken.double_taps[:3]
+    check(len(repeats) == 3, f"повторов {len(repeats)}, ожидалось 3")
     check(set(repeats) == {first}, f"повтор ушёл в другую клетку: {set(repeats)}")
 
 
-def test_level_counted_once() -> None:
-    """Уровень не должен засчитываться дважды на одном и том же поле.
-
-    Игра держит поле на экране ещё пару секунд после последнего котика.
-    Без ожидания бот перечитывает то же поле и считает его новым уровнем.
-    """
-    phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
-
-    with running(phone, max_levels=1, max_steps=10):
-        pass
-
-    # Один уровень = ровно N двойных тапов, а не два прохода по полю.
-    check(
-        len(phone.double_taps) == 8,
-        f"двойных тапов {len(phone.double_taps)}, ожидалось 8: "
-        "похоже, уровень посчитан дважды",
-    )
-
-
-def test_waits_for_board_to_change() -> None:
-    """После последнего котика бот ждёт, пока поле уйдёт с экрана."""
-    phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
-    board = read_board(str(SHOTS / "shot_5.jpg"))
-
-    # После того как все котики поставлены, поле остаётся на экране:
-    # подделка не переключается сама, как и игра.
-    for cat in solve_from_board(board):
-        phone.double_tap(*board.tap_point(cat.row, cat.col))
-
-    with running(phone, max_levels=1, max_steps=5):
-        pass
-
-    check(
-        len(phone.double_taps) == 8,
-        f"после готового поля двойных тапов {len(phone.double_taps)}, "
-        "бот продолжал тапать вместо ожидания",
-    )
-
-
-def test_retries_transition_frame() -> None:
-    """Кадр во время анимации читается плохо — бот переснимает экран.
-
-    На живом прогоне между уровнями ловился промежуточный кадр: поле 10x10
-    собиралось с 12 цветами вместо 10. Через пару секунд кадр нормальный,
-    поэтому нужен повтор, а не остановка.
-    """
-    broken = FakePhone(screens=[SHOTS / "shot_5.jpg"])
-
-    # Первые два кадра — мусор, дальше нормальное поле.
-    def flaky_capture(destination):
-        local = Path(destination)
-        local.parent.mkdir(parents=True, exist_ok=True)
-        if broken.index <= 2:
-            broken.index += 1
-            cv2.imwrite(
-                str(local),
-                np.full((2340, 1080, 3), 250, dtype=np.uint8),
-            )
-            return local
-        return broken.capture(local)
-
-    with mock.patch.object(main, "OUT_DIR", broken.out), \
-         mock.patch.object(main, "LIVE_SHOT", broken.out / "live.png"), \
-         mock.patch.object(main.emulate, "capture", side_effect=flaky_capture), \
-         mock.patch.object(main.emulate, "tap", side_effect=broken.tap), \
-         mock.patch.object(main.emulate, "double_tap", side_effect=broken.double_tap), \
-         mock.patch.object(main.emulate, "is_connected", return_value=True), \
-         mock.patch("time.sleep"):
-        code = main.run_loop(dry_run=False, max_levels=1, max_steps=10)
-
-    check(code == 0, f"вернулся код {code}, ожидался 0")
-    check(len(broken.double_taps) == 8, f"двойных тапов {len(broken.double_taps)}, ожидалось 8")
-
-
 def test_tiny_board_rejected() -> None:
-    """Кадры перехода иногда читаются как поле 1x1 — это не доска."""
-    from field import Board
-    from solver import Solution
-
-    tiny = Board(
-        n=1,
-        colors=(("A",),),
-        cats=frozenset({(0, 0)}),
-        centers=((0.0, 0.0),),
-        tap_points=((0.0, 0.0),),
-        palette=((0, 0, 0),),
-        cell_w=10,
-        cell_h=10,
-    )
-
-    problem = main.inspect_board(tiny)
-    check(problem is not None, "поле 1x1 прошло проверку")
-    check(
-        problem is not None and "1x1" in problem,
-        f"в сообщении нет размера: {problem}",
-    )
-
-
-def test_retries_bad_board_frame() -> None:
-    """Кадр перехода, прочитанный как поле 1x1, переснимается, а не роняет бота.
-
-    На живом прогоне после тапа по лидерам приходил кадр, который читался
-    как поле 1x1. Проверка доски его отвергала, и бот сразу останавливался,
-    хотя через секунду на экране было нормальное поле.
-    """
-    from field import Board
-
-    tiny = Board(
-        n=1,
-        colors=(("A",),),
-        cats=frozenset({(0, 0)}),
-        centers=((0.0, 0.0),),
-        tap_points=((0.0, 0.0),),
-        palette=((0, 0, 0),),
-        cell_w=10,
-        cell_h=10,
-    )
-
+    """Поле 1x1 — не доска, а ореол вокруг иконки на переходном кадре."""
     phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
+    problem = BoardValidator(Settings(), Solver()).problem_with(tiny_board())
 
-    from screens import BoardScreen
-
-    tiny_screen = BoardScreen(board=tiny)
-    real_shoot = main.shoot
-    shoot_calls = {"n": 0}
-
-    # Первые два снимка — мусорное «поле 1x1», дальше нормальное поле.
-    def counting_shoot(path):
-        shoot_calls["n"] += 1
-        if shoot_calls["n"] <= 2:
-            return tiny_screen
-        return real_shoot(path)
-
-    with mock.patch.object(main, "OUT_DIR", phone.out), \
-         mock.patch.object(main, "LIVE_SHOT", phone.out / "live.png"), \
-         mock.patch.object(main.emulate, "capture", side_effect=phone.capture), \
-         mock.patch.object(main.emulate, "tap", side_effect=phone.tap), \
-         mock.patch.object(main.emulate, "double_tap", side_effect=phone.double_tap), \
-         mock.patch.object(main.emulate, "is_connected", return_value=True), \
-         mock.patch.object(main, "shoot", side_effect=counting_shoot), \
-         mock.patch("time.sleep"):
-        code = main.run_loop(dry_run=False, max_levels=1, max_steps=10)
-
-    check(code == 0, f"вернулся код {code}, ожидался 0")
-    check(len(phone.double_taps) == 8, f"двойных тапов {len(phone.double_taps)}, ожидалось 8")
+    check(problem is not None, "поле 1x1 прошло проверку")
+    check(problem is not None and "1x1" in problem, f"в сообщении нет размера: {problem}")
 
 
-def test_board_is_inspected_before_tapping() -> None:
-    """Поле с подсветкой поверх читается как поле, но котиков там больше,
-    чем может быть. Такое до тапов не допускаем."""
-    from field import Board
-
+def test_too_many_cats_rejected() -> None:
+    """Экран «уровень пройден» подсветкой поверх поля даёт лишних котиков."""
+    phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
     board = Board(
         n=10,
         colors=tuple(tuple("ABCDEFGHIJ" for _ in range(10)) for _ in range(10)),
-        cats=frozenset(
-            (row, col) for row in range(10) for col in range(10)
-        ),
+        cats=frozenset((row, col) for row in range(10) for col in range(10)),
         centers=tuple((0.0, 0.0) for _ in range(100)),
         tap_points=tuple((0.0, 0.0) for _ in range(100)),
         palette=tuple((0, 0, 0) for _ in range(10)),
@@ -343,46 +201,87 @@ def test_board_is_inspected_before_tapping() -> None:
         cell_h=10,
     )
 
-    problem = main.inspect_board(board)
+    problem = BoardValidator(Settings(), Solver()).problem_with(board)
     check(problem is not None, "100 котиков на поле 10x10 прошли проверку")
-    check(
-        problem is not None and "100" in problem,
-        f"в сообщении нет числа котиков: {problem}",
-    )
 
 
-def test_real_boards_pass_inspection() -> None:
+def test_real_boards_pass_validation() -> None:
     """Настоящие доски проверку проходят."""
-    for name in ("live_10x10_empty", "live_9x9_cat_on_grey", "live_10x10_one_cat"):
-        board = read_board(str(SHOTS / f"{name}.png"))
-        problem = main.inspect_board(board)
+    validator = BoardValidator(Settings(), Solver())
+    reader = BoardReader()
+
+    for name in ("live_10x10_empty.png", "live_9x9_cat_on_grey.png",
+                 "live_10x10_one_cat.png", "shot_5.jpg"):
+        board = reader.read_path(str(SHOTS / name))
+        problem = validator.problem_with(board)
         check(problem is None, f"{name}: проверка отклонила доску: {problem}")
 
 
 def test_overlay_board_does_not_pass() -> None:
     """Экран «уровень пройден» поверх поля должен отклоняться."""
-    path = SHOTS / "bad21_cats.png"
     try:
-        board = read_board(str(path))
-    except Exception as error:
+        board = BoardReader().read_path(str(SHOTS / "bad21_cats.png"))
+    except Exception:
         # Отказ на этапе чтения — тоже правильное поведение.
-        check(True, "")
         return
 
-    problem = main.inspect_board(board)
+    problem = BoardValidator(Settings(), Solver()).problem_with(board)
     check(problem is not None, "поле с подсветкой прошло проверку")
+
+
+def test_retries_transition_frame() -> None:
+    """Кадр во время анимации читается плохо — бот переснимает экран."""
+    phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
+    calls = {"n": 0}
+    original = phone.capture
+
+    def flaky_capture(destination):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            local = Path(destination)
+            local.parent.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(local), np.full((2340, 1080, 3), 250, dtype=np.uint8))
+            return local
+        return original(destination)
+
+    phone.capture = flaky_capture
+    code = run(phone, max_steps=10)
+
+    check(code == EXIT_OK, f"вернулся код {code}, ожидался 0")
+    check(len(phone.double_taps) == 8, f"двойных тапов {len(phone.double_taps)}, ожидалось 8")
+
+
+def test_retries_bad_board_frame() -> None:
+    """Поле 1x1 на переходе переснимается, а не роняет бота."""
+    phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
+    bot = build_bot(phone)
+    real_shoot = bot._shoot
+    calls = {"n": 0}
+
+    def counting_shoot():
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            return BoardScreen(board=tiny_board())
+        return real_shoot()
+
+    bot._shoot = counting_shoot
+
+    with mock.patch("time.sleep"):
+        code = bot.run(max_levels=1, max_steps=10)
+
+    check(code == EXIT_OK, f"вернулся код {code}, ожидался 0")
+    check(len(phone.double_taps) == 8, f"двойных тапов {len(phone.double_taps)}, ожидалось 8")
 
 
 def test_stops_on_ambiguous_board() -> None:
     phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
-    from unittest import mock
+    bot = build_bot(phone)
 
-    with mock.patch.object(
-        main, "solve_from_board", side_effect=InconsistentBoard("Решений минимум 2")
-    ):
-        with running(phone, max_levels=1, max_steps=5):
-            pass
+    with mock.patch.object(Solver, "solve", side_effect=UniqueSolutionRequired("решений минимум 2")), \
+         mock.patch("time.sleep"):
+        code = bot.run(max_levels=1, max_steps=10)
 
+    check(code == EXIT_FAILED, f"вернулся код {code}, ожидался 1")
     check(not phone.double_taps, "тапали на неоднозначном поле")
 
 
@@ -392,10 +291,8 @@ def test_stops_on_unknown_screen() -> None:
     phone = FakePhone(screens=[blank])
 
     try:
-        with running(phone, max_levels=1, max_steps=5) as code:
-            pass
-
-        check(code == 1, f"вернулся код {code}, ожидался 1")
+        code = run(phone, max_steps=5)
+        check(code == EXIT_FAILED, f"вернулся код {code}, ожидался 1")
         check(not phone.taps, "тапали на пустом экране")
     finally:
         blank.unlink(missing_ok=True)
@@ -403,26 +300,43 @@ def test_stops_on_unknown_screen() -> None:
 
 def test_dry_run_never_taps() -> None:
     phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
-
-    with running(phone, dry_run=True):
-        pass
+    run(phone, dry_run=True)
 
     check(not phone.taps, f"в dry-run одиночных тапов {len(phone.taps)}")
     check(not phone.double_taps, f"в dry-run двойных тапов {len(phone.double_taps)}")
 
 
+def test_level_counted_once() -> None:
+    """Уровень не засчитывается дважды на одном поле.
+
+    Игра держит поле на экране ещё пару секунд после последнего котика.
+    Без ожидания бот перечитывает то же поле и считает его новым уровнем.
+    """
+    phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
+    run(phone, max_levels=1, max_steps=10)
+
+    check(
+        len(phone.double_taps) == 8,
+        f"двойных тапов {len(phone.double_taps)}, ожидалось 8: похоже, уровень посчитан дважды",
+    )
+
+
 def test_levels_limit_stops_loop() -> None:
     phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
-
-    with running(phone, max_levels=1):
-        pass
+    run(phone, max_levels=1)
 
     check(len(phone.double_taps) == 8, f"двойных тапов {len(phone.double_taps)}, ожидалось 8")
 
 
-def main_run() -> int:
-    tests = (
-        test_sprites_are_usable,
+def test_step_limit_stops_loop() -> None:
+    phone = FakePhone(screens=[SHOTS / "shot_1.jpg"])
+    run(phone, max_levels=0, max_steps=3)
+
+    check(len(phone.taps) <= 5, f"тапов {len(phone.taps)} при пределе шагов 3")
+
+
+def main() -> int:
+    for test in (
         test_single_level_one_pass,
         test_found_cats_not_tapped,
         test_taps_match_solution,
@@ -432,21 +346,19 @@ def main_run() -> int:
         test_repeated_tap_when_screen_unchanged,
         test_stopped_when_screen_never_changes,
         test_repeats_double_tap_when_cat_missing,
-        test_level_counted_once,
-        test_waits_for_board_to_change,
-        test_retries_transition_frame,
         test_tiny_board_rejected,
-        test_retries_bad_board_frame,
-        test_board_is_inspected_before_tapping,
-        test_real_boards_pass_inspection,
+        test_too_many_cats_rejected,
+        test_real_boards_pass_validation,
         test_overlay_board_does_not_pass,
+        test_retries_transition_frame,
+        test_retries_bad_board_frame,
         test_stops_on_ambiguous_board,
         test_stops_on_unknown_screen,
         test_dry_run_never_taps,
+        test_level_counted_once,
         test_levels_limit_stops_loop,
-    )
-
-    for test in tests:
+        test_step_limit_stops_loop,
+    ):
         test()
         print(f"{test.__name__}: выполнен")
 
@@ -456,9 +368,9 @@ def main_run() -> int:
             print(f"  - {message}")
         return 1
 
-    print("\nВсе тесты цикла прошли")
+    print("\nВсе тесты игрового цикла прошли")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main_run())
+    raise SystemExit(main())

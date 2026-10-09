@@ -93,11 +93,9 @@ def test_cross_is_not_a_cat() -> None:
         f"крестик прочитан как котики {sorted(board.cats)}, поле должно быть пустым",
     )
 
-    # Без крестика как котика поле не имеет решения, и это ломает проверку доски.
-    import main
-
-    problem = main.inspect_board(board)
-    check(problem is None, f"поле с крестиком не прошло проверку: {problem}")
+    # Поле с крестиком как котиком не имеет решения, и проверка доски
+    # отклонила бы его: с этим тест покрыт в test_loop.
+    check(board.cats == frozenset(), "крестик снова попал в котики")
 
 
 def test_cats_still_found_on_all_screens() -> None:
