@@ -343,6 +343,15 @@ def read_board(path: str) -> Board:
         if _has_cat(image, grid[(r, c)], samples[(r, c)])
     )
 
+    # Котиков ровно N, и больше на поле быть не может. Если нашлось больше —
+    # это не поле, а экран с подсветкой поверх: на таком бот видел 21
+    # «котика» на доске 10x10 с надписью «10 кошек».
+    if len(cats) > n:
+        raise BoardReadError(
+            f"Нашлось {len(cats)} котиков на поле {n}x{n}, а котиков ровно {n}. "
+            "Это не игровое поле"
+        )
+
     centers = []
     tap_points = []
     for r in range(n):

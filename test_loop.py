@@ -252,6 +252,59 @@ def test_retries_transition_frame() -> None:
     check(len(broken.double_taps) == 8, f"двойных тапов {len(broken.double_taps)}, ожидалось 8")
 
 
+def test_board_is_inspected_before_tapping() -> None:
+    """Поле с подсветкой поверх читается как поле, но котиков там больше,
+    чем может быть. Такое до тапов не допускаем."""
+    from solver import Solution
+
+    fake = Solution(
+        n=10,
+        cats=tuple((row, col) for row in range(10) for col in range(10))[:21],
+    )
+
+    from field import Board
+
+    board = Board(
+        n=10,
+        colors=tuple(tuple("ABCDEFGHIJ" for _ in range(10)) for _ in range(10)),
+        cats=frozenset(fake.cats),
+        centers=tuple((0.0, 0.0) for _ in range(100)),
+        tap_points=tuple((0.0, 0.0) for _ in range(100)),
+        palette=tuple((0, 0, 0) for _ in range(10)),
+        cell_w=10,
+        cell_h=10,
+    )
+
+    problem = main.inspect_board(board)
+    check(problem is not None, "21 котик на поле 10x10 прошёл проверку")
+    check(
+        problem is not None and "21" in problem,
+        f"в сообщении нет числа котиков: {problem}",
+    )
+
+
+def test_real_boards_pass_inspection() -> None:
+    """Настоящие доски проверку проходят."""
+    for name in ("live_10x10_empty", "live_9x9_cat_on_grey", "live_10x10_one_cat"):
+        board = read_board(str(SHOTS / f"{name}.png"))
+        problem = main.inspect_board(board)
+        check(problem is None, f"{name}: проверка отклонила доску: {problem}")
+
+
+def test_overlay_board_does_not_pass() -> None:
+    """Экран «уровень пройден» поверх поля должен отклоняться."""
+    path = SHOTS / "bad21_cats.png"
+    try:
+        board = read_board(str(path))
+    except Exception as error:
+        # Отказ на этапе чтения — тоже правильное поведение.
+        check(True, "")
+        return
+
+    problem = main.inspect_board(board)
+    check(problem is not None, "поле с подсветкой прошло проверку")
+
+
 def test_stops_on_ambiguous_board() -> None:
     phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
     from unittest import mock
@@ -314,6 +367,9 @@ def main_run() -> int:
         test_level_counted_once,
         test_waits_for_board_to_change,
         test_retries_transition_frame,
+        test_board_is_inspected_before_tapping,
+        test_real_boards_pass_inspection,
+        test_overlay_board_does_not_pass,
         test_stops_on_ambiguous_board,
         test_stops_on_unknown_screen,
         test_dry_run_never_taps,

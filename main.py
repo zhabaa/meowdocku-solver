@@ -21,6 +21,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import emulate
 from annotate import annotate
@@ -84,7 +85,17 @@ def run_loop(dry_run: bool, max_levels: int, max_steps: int) -> int:
             return 1
 
         if screen.kind == ScreenKind.BOARD:
-            if not solve_level(screen.board, LIVE_SHOT, dry_run):
+            # Сначала убеждаемся, что это нормальная доска, и только потом
+            # что-то тапаем. Экран с подсветкой поверх поля тоже читается как
+            # поле, но котиков там «находится» больше, чем их может быть.
+            board = screen.board
+            problem = inspect_board(board)
+            if problem is not None:
+                print(f"Поле не годится: {problem}")
+                print(f"Последний скриншот: {LIVE_SHOT}")
+                return 1
+
+            if not solve_level(board, LIVE_SHOT, dry_run):
                 return 1
 
             if dry_run:
@@ -119,6 +130,40 @@ def run_loop(dry_run: bool, max_levels: int, max_steps: int) -> int:
                 dry_run,
             ):
                 return 0
+
+
+def inspect_board(board: Board) -> Optional[str]:
+    """Проверить доску перед тапами. Вернёт причину, если что-то не так.
+
+    Проверки, которые видно глазом на настоящей доске:
+      - котиков не больше, чем размер поля,
+      - в каждой строке и столбце найденные котики не делят место,
+      - все котики разных цветов,
+      - расстановка единственная: если решений много, поле прочиталось неверно.
+    """
+    n = board.n
+    cats = board.cats
+
+    if len(cats) > n:
+        return f"найдено {len(cats)} котиков при поле {n}x{n}, а котиков всего {n}"
+
+    rows = [r for r, _ in cats]
+    cols = [c for _, c in cats]
+    letters = [board.colors[r][c] for r, c in cats]
+
+    if len(set(rows)) != len(rows):
+        return "найденные котики делят строку"
+    if len(set(cols)) != len(cols):
+        return "найденные котики делят столбец"
+    if len(set(letters)) != len(letters):
+        return "найденные котики одного цвета"
+
+    try:
+        solve_from_board(board)
+    except InconsistentBoard as error:
+        return str(error)
+
+    return None
 
 
 def shoot_stable():
