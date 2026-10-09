@@ -37,6 +37,9 @@ POLL_INTERVAL = 1.0
 REACTION_TIMEOUT = 6.0
 # Сколько повторов тапа подряд, прежде чем сдаться.
 MAX_TAP_ATTEMPTS = 3
+# Сколько раз переснять экран, если он не опознался: во время анимации
+# перехода между экранами кадр читается плохо и через пару секунд нормально.
+MAX_SCREEN_RETRIES = 4
 
 NO_LIMIT = 0  # 0 — без ограничения
 
@@ -75,8 +78,10 @@ def run_loop(dry_run: bool, max_levels: int, max_steps: int) -> int:
             print(f"\nДостигнут предел шагов ({max_steps}). Останавливаюсь.")
             return 0
 
-        screen = shoot(LIVE_SHOT)
-        describe(screen)
+        screen = shoot_stable()
+        if screen is None:
+            print(f"Последний скриншот: {LIVE_SHOT}")
+            return 1
 
         if screen.kind == ScreenKind.BOARD:
             if not solve_level(screen.board, LIVE_SHOT, dry_run):
@@ -115,10 +120,28 @@ def run_loop(dry_run: bool, max_levels: int, max_steps: int) -> int:
             ):
                 return 0
 
-        else:
+
+def shoot_stable():
+    """Снять экран и дождаться, пока он перестанет меняться.
+
+    Игра переезжает между экранами с анимацией, и промежуточный кадр читается
+    плохо: поле 10x10 собиралось с 12 цветами вместо 10. Такое проходит за
+    пару секунд, поэтому такой кадр просто пропускаем.
+    """
+    for attempt in range(1, MAX_SCREEN_RETRIES + 1):
+        screen = shoot(LIVE_SHOT)
+
+        if screen.kind != ScreenKind.UNKNOWN:
+            describe(screen)
+            return screen
+
+        if attempt == 1:
             print(f"Экран не опознан: {screen.reason}")
-            print(f"Последний скриншот: {LIVE_SHOT}")
-            return 1
+        print(f"  пробую ещё раз ({attempt}/{MAX_SCREEN_RETRIES})")
+        time.sleep(POLL_INTERVAL)
+
+    print(f"Экран так и не распознался: {screen.reason}")
+    return None
 
 
 def solve_level(board: Board, shot: Path, dry_run: bool) -> bool:

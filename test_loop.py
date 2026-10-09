@@ -10,6 +10,7 @@
 
 import contextlib
 from pathlib import Path
+from unittest import mock
 
 import cv2
 import numpy as np
@@ -216,6 +217,41 @@ def test_waits_for_board_to_change() -> None:
     )
 
 
+def test_retries_transition_frame() -> None:
+    """Кадр во время анимации читается плохо — бот переснимает экран.
+
+    На живом прогоне между уровнями ловился промежуточный кадр: поле 10x10
+    собиралось с 12 цветами вместо 10. Через пару секунд кадр нормальный,
+    поэтому нужен повтор, а не остановка.
+    """
+    broken = FakePhone(screens=[SHOTS / "shot_5.jpg"])
+
+    # Первые два кадра — мусор, дальше нормальное поле.
+    def flaky_capture(destination):
+        local = Path(destination)
+        local.parent.mkdir(parents=True, exist_ok=True)
+        if broken.index <= 2:
+            broken.index += 1
+            cv2.imwrite(
+                str(local),
+                np.full((2340, 1080, 3), 250, dtype=np.uint8),
+            )
+            return local
+        return broken.capture(local)
+
+    with mock.patch.object(main, "OUT_DIR", broken.out), \
+         mock.patch.object(main, "LIVE_SHOT", broken.out / "live.png"), \
+         mock.patch.object(main.emulate, "capture", side_effect=flaky_capture), \
+         mock.patch.object(main.emulate, "tap", side_effect=broken.tap), \
+         mock.patch.object(main.emulate, "double_tap", side_effect=broken.double_tap), \
+         mock.patch.object(main.emulate, "is_connected", return_value=True), \
+         mock.patch("time.sleep"):
+        code = main.run_loop(dry_run=False, max_levels=1, max_steps=10)
+
+    check(code == 0, f"вернулся код {code}, ожидался 0")
+    check(len(broken.double_taps) == 8, f"двойных тапов {len(broken.double_taps)}, ожидалось 8")
+
+
 def test_stops_on_ambiguous_board() -> None:
     phone = FakePhone(screens=[SHOTS / "shot_5.jpg"])
     from unittest import mock
@@ -277,6 +313,7 @@ def main_run() -> int:
         test_repeats_double_tap_when_cat_missing,
         test_level_counted_once,
         test_waits_for_board_to_change,
+        test_retries_transition_frame,
         test_stops_on_ambiguous_board,
         test_stops_on_unknown_screen,
         test_dry_run_never_taps,
