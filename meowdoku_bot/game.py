@@ -231,7 +231,7 @@ class GameBot:
 
                     return EXIT_FAILED
 
-    def _shoot_stable(self) -> Optional[Screen]:
+    def _shoot_stable(self) -> Screen | None:
         problem = ""
 
         for attempt in range(1, self.timing.max_screen_retries + 1):
