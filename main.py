@@ -1,17 +1,3 @@
-"""Запуск бота Meowdoku.
-
-Здесь только разбор аргументов и сборка зависимостей: весь игровой цикл
-в meowdoku_bot/game.py, чтение поля в meowdoku_bot/field.py,
-решение в meowdoku_bot/solver.py.
-
-Запуск:
-    .venv/bin/python main.py                # один уровень
-    .venv/bin/python main.py --levels 5     # пять уровней
-    .venv/bin/python main.py --levels 0     # без ограничения
-    .venv/bin/python main.py --dry-run      # показать решение, не тапать
-    .venv/bin/python main.py --image путь   # разобрать сохранённый скриншот
-"""
-
 import argparse
 import sys
 from pathlib import Path
@@ -22,30 +8,21 @@ from meowdoku_bot.domain import Cell
 from meowdoku_bot.field import BoardReader
 from meowdoku_bot.game import EXIT_FAILED, EXIT_OK, BoardValidator, GameBot, LevelPlayer
 from meowdoku_bot.logging_setup import setup_logging
-from meowdoku_bot.screens import BoardScreen, ScreenClassifier, ScreenKind, Screen
+from meowdoku_bot.screens import ScreenClassifier, ScreenKind
 from meowdoku_bot.solver import Solver, UniqueSolutionRequired
 
 DEFAULT_MAX_LEVELS = 1
-DEFAULT_MAX_STEPS = 0  # 0 — без ограничения
+DEFAULT_MAX_STEPS = 0
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Бот для Meowdoku")
-    parser.add_argument(
-        "--levels",
-        type=int,
-        default=DEFAULT_MAX_LEVELS,
-        help="сколько уровней пройти, 0 — без ограничения",
-    )
-    parser.add_argument(
-        "--steps", type=int, default=DEFAULT_MAX_STEPS, help="предел шагов цикла, 0 — без ограничения"
-    )
+    parser.add_argument("--levels", type=int, default=DEFAULT_MAX_LEVELS, help="сколько уровней пройти, 0 — без ограничения")
+    parser.add_argument("--steps", type=int, default=DEFAULT_MAX_STEPS, help="предел шагов цикла, 0 — без ограничения")
     parser.add_argument("--dry-run", action="store_true", help="не тапать, только показывать")
     parser.add_argument("--image", metavar="ПУТЬ", help="разобрать сохранённый скриншот")
     parser.add_argument("--verbose", action="store_true", help="подробный лог в консоль")
-    parser.add_argument(
-        "--log", metavar="ПУТЬ", default=str(DEFAULT_LOG_FILE), help="куда писать лог"
-    )
+    parser.add_argument("--log", metavar="ПУТЬ", default=str(DEFAULT_LOG_FILE), help="куда писать лог")
     return parser.parse_args(argv)
 
 
@@ -63,8 +40,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if not bot.device.is_connected():
         logger.error(
-            "телефон не подключён. Подключи по USB и включи отладку. "
-            "Или запусти с --image путь, чтобы разобрать готовый скриншот."
+            "Телефон не подключён. Подключи по USB MIDI. "
+            "Или запусти с --image путь."
         )
         return EXIT_FAILED
 
@@ -101,7 +78,7 @@ def build(settings: Settings) -> GameBot:
 
 
 def run_on_image(path: Path, settings: Settings) -> int:
-    """Разобрать сохранённый скриншот без телефона."""
+
     if not path.exists():
         print(f"нет файла {path}")
         return EXIT_FAILED
@@ -127,9 +104,13 @@ def run_on_image(path: Path, settings: Settings) -> int:
 
     solver = Solver(time_limit=settings.timing.solve_time_limit)
     try:
-        solution = solver.solve(board.colors, [Cell(row, col) for row, col in board.cats])
+        solution = solver.solve(
+            colors=board.colors, 
+            found_cats=[Cell(row, col) for row, col in board.cats]
+        )
+
     except UniqueSolutionRequired as error:
-        print(f"решение не найдено: {error}")
+        print(f"Решение не найдено: {error}")
         return EXIT_FAILED
 
     already_found = [Cell(row, col) for row, col in board.cats]
