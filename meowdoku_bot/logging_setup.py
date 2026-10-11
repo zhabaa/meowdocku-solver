@@ -1,10 +1,3 @@
-"""Настройка логирования.
-
-Файл лога пишется всегда: бот может крутить уровни часами, и разбор
-неудачного прогона нужен после, а не во время. Консоль включается флагом
---verbose, потому что для обычного запуска хватает файла.
-"""
-
 import logging
 import sys
 from pathlib import Path
@@ -16,19 +9,12 @@ LOG_DATE_FORMAT = "%H:%M:%S"
 DEFAULT_LOG_FILE = Path("img/tmp/bot.log")
 
 
-def setup_logging(
-    verbose: bool = False,
-    log_file: str | Path = DEFAULT_LOG_FILE,
-    quiet_console: bool = False,
-) -> logging.Logger:
-    """Настроить логгер и вернуть его.
+def setup_logging(verbose: bool = False, log_file: str | Path = DEFAULT_LOG_FILE, 
+                  quiet_console: bool = False) -> logging.Logger:
 
-    verbose=False — в консоль только WARNING и хуже, всё остальное в файл.
-    verbose=True — в консоль всё, включая DEBUG.
-    """
     logger = logging.getLogger(LOGGER_NAME)
     logger.setLevel(logging.DEBUG)
-    # Повторный вызов не должен дублировать записи: снимаем старые обработчики.
+
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
         handler.close()
@@ -37,22 +23,25 @@ def setup_logging(
 
     destination = Path(log_file)
     destination.parent.mkdir(parents=True, exist_ok=True)
+
     file_handler = logging.FileHandler(destination, encoding="utf-8")
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
+
     logger.addHandler(file_handler)
 
     if not quiet_console:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.DEBUG if verbose else logging.INFO)
         console_handler.setFormatter(formatter)
+
         logger.addHandler(console_handler)
 
     return logger
 
 
 def get_logger(suffix: str | None = None) -> logging.Logger:
-    """Логгер конкретного модуля: get_logger('field') -> meowdoku.field."""
     if suffix:
         return logging.getLogger(f"{LOGGER_NAME}.{suffix}")
+
     return logging.getLogger(LOGGER_NAME)

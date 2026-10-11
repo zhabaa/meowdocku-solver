@@ -1,17 +1,9 @@
-"""Типы, которыми пользуются все модули.
-
-Вынесены отдельно, чтобы field, screens и solver не зависели друг от друга
-ради двух dataclass'ов: иначе получается цикл импортов.
-"""
-
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import NamedTuple
 
 
 class ScreenKind(StrEnum):
-    """Что сейчас на экране телефона."""
-
     BOARD = "board"
     LEVEL_DONE = "level_done"
     LEADERBOARD = "leaderboard"
@@ -20,8 +12,6 @@ class ScreenKind(StrEnum):
 
 @dataclass(frozen=True, order=True)
 class Cell:
-    """Клетка поля: строка и столбец с нуля."""
-
     row: int
     col: int
 
@@ -30,8 +20,6 @@ class Cell:
 
 
 class CellBox(NamedTuple):
-    """Прямоугольник клетки на скриншоте в пикселях."""
-
     left: int
     top: int
     width: int
@@ -50,4 +38,5 @@ class CellBox(NamedTuple):
         return min(self.width, self.height)
 
     def contains(self, x: float, y: float) -> bool:
-        return self.left <= x < self.left + self.width and self.top <= y < self.top + self.height
+        return self.left <= x < self.left + self.width and \
+            self.top <= y < self.top + self.height
